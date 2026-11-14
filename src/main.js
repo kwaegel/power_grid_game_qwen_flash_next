@@ -1,0 +1,658 @@
+// Gridling — browser shell: game loop, mouse/keyboard input, panels, coach marks.
+
+import {
+  createGame, tick, buildPlant, demolish, canBuild, setPlantOn, setPlantMode,
+  buyUpgrade, fleetSummary, demandMW, serialize, PLANTS, PLANT_ORDER, HAZARDS, WEATHER,
+  UPGRADES, money as fmtMoney, calendarOf, seasonName, hourOf, availableCapacity,
+  START_MONEY, MAP_COLS, MAP_ROWS, T, TERRAIN_NAMES,
+} from './sim/engine.js';
+import { DAYS_PER_MONTH, MONTH_NAMES, TICKS_PER_DAY } from './sim/world.js';
+import { drawWorld, layout, tileAt, drawChart } from './render.js';
+import {
+  saveGame, loadGame, hasSave, saveMeta, clearSave, exportFile, importFileFromText,
+  listScores, addScore, seenCoach, markCoach, storageAvailable,
+} from './storage.js';
+
+const el = (id) => document.getElementById(id);
+const app = el('app');
+const mapCanvas = el('map');
+const chartCanvas = el('chart');
+
+const ui = {
+  game: null,
+  speed: 1,
+  buildSel: null,
+  hover: null,
+  hoverOk: false,
+  selected: null,
+  tab: 'build',
+  hist: [],
+  modalOpen: false,
+  lastLogLen: 0,
+  geo: null,
+  coachStep: -1,
+};
+
+// ---------------------------------------------------------------- loop -------
+
+let BASE_TPS = 2;         // sim ticks per real second at 1x (one in-game day ≈ 10 s)
+let acc = 0;
+let lastFrame = performance.now();
+
+function frame(now) {
+  const dt = Math.min(0.25, (now - lastFrame) / 1000);
+  lastFrame = now;
+  if (ui.game && !ui.modalOpen && ui.speed > 0 && !ui.game.over) {
+    acc += dt * BASE_TPS * ui.speed;
+    let steps = 0;
+    while (acc >= 1 && steps < 12) { step(); acc -= 1; steps++; }
+    if (acc > 12) acc = 0;
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+
+function step() {
+  const g = ui.game;
+  const beforeOver = g.over;
+  tick(g);
+  const s = fleetSummary(g);
+  ui.hist.push({ demand: g.lastDemand, served: g.lastServed, potential: s.potential + s.batteryPower });
+  if (ui.hist.length > 110) ui.hist.shift();
+  syncEvents();
+  if (g.over && !beforeOver) onGameOver();
+}
+
+// ---------------------------------------------------------------- render -----
+
+function render() {
+  if (!ui.game) return;
+  const g = ui.game;
+  ui.geo = layout(mapCanvas, MAP_COLS, MAP_ROWS);
+  if (ui.hover && ui.buildSel) {
+    ui.hoverOk = canBuild(g, ui.buildSel, ui.hover.x, ui.hover.y).ok;
+  }
+  drawWorld(g, ui.geo, ui);
+  drawChart(chartCanvas, g, ui.hist);
+  syncStats();
+  syncHazard();
+  syncForecast();
+  if (Date.now() - ui.autosaveAt > 12000) {
+    ui.autosaveAt = Date.now();
+    if (!g.over) saveGame(g);
+  }
+}
+
+function calendarText(tickNo) {
+  const c = calendarOf(tickNo);
+  return `Year ${c.year} · ${MONTH_NAMES[c.month]} ${c.dom}`;
+}
+
+function clockText(tickNo) {
+  const h = hourOf(tickNo);
+  return `${String(h).padStart(2, '0')}:00`;
+}
+
+function syncStats() {
+  const g = ui.game;
+  const s = fleetSummary(g);
+  el('v-date').textContent = seasonName(calendarOf(g.tick).season);
+  el('stat-date').querySelector('.k').textContent = calendarText(g.tick);
+  el('v-clock').textContent = clockText(g.tick);
+  const w = WEATHER[g.weather];
+  el('v-weather').textContent = `${w.emoji} ${w.name}`;
+  el('v-money').textContent = `${g.money < 0 ? '-' : ''}$${fmtMoney(Math.abs(g.money))}`;
+  el('stat-money').classList.toggle('neg', g.money < 0);
+  const sat = Math.round(g.satisfaction);
+  el('v-sat').textContent = `${sat}%`;
+  const fill = el('v-satfill');
+  fill.style.width = `${sat}%`;
+  fill.style.background = sat > 55 ? 'var(--leaf)' : sat > 30 ? 'var(--warn)' : 'var(--alert)';
+  el('stat-sat').classList.toggle('warnstate', sat <= 30);
+  el('v-score').textContent = Math.round(g.score).toLocaleString('en-US');
+
+  const d = g.lastDemand, served = g.lastServed, avail = s.potential + s.batteryPower;
+  const parts = [
+    `demand ${Math.round(d)} MW`,
+    `served ${Math.round(served)} MW`,
+    `available ${Math.round(avail)} MW`,
+    `tie-line ${Math.round(s.link)} MW`,
+  ];
+  if (s.storageCap) parts.push(`stored ${Math.round(s.stored)}/${Math.round(s.storageCap)} MWh`);
+  if (g.lastFlow.charge > 0.5) parts.push(`charging ${Math.round(g.lastFlow.charge)} MW`);
+  if (g.lastFlow.discharge > 0.5) parts.push(`discharging ${Math.round(g.lastFlow.discharge)} MW`);
+  if (g.lastFlow.curtail > 2) parts.push(`curtailed ${Math.round(g.lastFlow.curtail)} MW`);
+  el('ticker').textContent = parts.join('  ·  ');
+}
+
+function syncHazard() {
+  const g = ui.game;
+  const b = el('hazardbanner');
+  const h = g.hazard;
+  if (!h) { b.hidden = true; return; }
+  const def = HAZARDS[h.id];
+  b.hidden = false;
+  b.className = h.phase === 'warn' ? 'warn' : 'active';
+  const when = h.phase === 'warn'
+    ? `expected in ~${fmtDur(h.ticksLeft)}`
+    : `under way for ~${fmtDur(h.ticksLeft)} more`;
+  b.innerHTML = `${def.emoji} <span>${def.name} — ${when}</span> <span class="count">${def.advice}</span>`;
+}
+
+function fmtDur(ticks) {
+  if (ticks >= TICKS_PER_DAY) {
+    const d = Math.round(ticks / TICKS_PER_DAY);
+    return `${d} day${d === 1 ? '' : 's'}`;
+  }
+  return `${ticks} h`;
+}
+
+function syncForecast() {
+  const g = ui.game;
+  const chips = [];
+  if (g.hazard && g.hazard.phase === 'warn') {
+    const def = HAZARDS[g.hazard.id];
+    chips.push(`<span class="chip" title="${def.text}">${def.emoji} ${def.name}!</span>`);
+  }
+  for (const w of g.forecast) {
+    const def = WEATHER[w];
+    const eff = w === 'calm' || w === 'storm' || w === 'heat' || w === 'frost' ? `wind ×${def.wind} · sun ×${def.solar}` : '';
+    chips.push(`<span class="chip" title="${def.name}${eff ? ' — ' + eff : ''}">${def.emoji}</span>`);
+  }
+  el('forecast-chips').innerHTML = chips.join('');
+}
+
+function syncEvents() {
+  const g = ui.game;
+  if (g.log.length === ui.lastLogLen) return;
+  const fresh = g.log.slice(ui.lastLogLen);
+  ui.lastLogLen = g.log.length;
+  for (const e of fresh) {
+    if (e.kind === 'warn' || e.kind === 'bad') toast(e.text, e.kind);
+  }
+  renderLog();
+  if (fresh.some((e) => e.kind === 'bad' || e.kind === 'warn')) syncDetailIfOpen();
+}
+
+function renderLog() {
+  const g = ui.game;
+  const rows = g.log.slice(-40).reverse().map((e) => {
+    const c = calendarOf(e.tick);
+    return `<div class="lrow ${e.kind}"><span class="lt">${MONTH_NAMES[c.month]} ${c.dom}, Y${c.year} ${clockText(e.tick)}</span>${escapeHtml(e.text)}</div>`;
+  });
+  el('log').innerHTML = rows.join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+
+// ---------------------------------------------------------------- palette ----
+
+function renderPalette() {
+  const g = ui.game;
+  const html = PLANT_ORDER.map((id) => {
+    const d = PLANTS[id];
+    const owned = g.plants.filter((p) => p.id === id).length;
+    const limited = d.maxCount ? ` · ${owned}/${d.maxCount}` : '';
+    const afford = g.money >= d.capex;
+    return `<div class="pcard ${ui.buildSel === id ? 'sel' : ''} ${afford ? '' : 'cant'}" data-plant="${id}"
+      title="${escapeHtml(d.blurb)}">
+      <div class="ico">${d.emoji}</div>
+      <div><div class="nm">${d.name}${limited}</div><div class="ds">${escapeHtml(d.blurb)}</div></div>
+      <div class="price ${afford ? '' : 'no'}">$${fmtMoney(d.capex)}</div>
+    </div>`;
+  }).join('');
+  el('palette').innerHTML = html;
+  el('palette').querySelectorAll('.pcard').forEach((c) => {
+    c.addEventListener('click', () => selectBuild(c.dataset.plant));
+  });
+}
+
+function selectBuild(id) {
+  ui.buildSel = ui.buildSel === id ? null : id;
+  mapCanvas.classList.toggle('building', !!ui.buildSel);
+  renderPalette();
+  if (ui.buildSel) {
+    const d = PLANTS[ui.buildSel];
+    toast(`${d.emoji} ${d.name}: ${d.tip}`, 'info');
+  }
+}
+
+function renderUpgrades() {
+  const g = ui.game;
+  el('upgrades').innerHTML = Object.values(UPGRADES).map((u) => {
+    const lvl = g.upgrades[u.id] || 0;
+    const maxed = lvl >= u.max;
+    const cost = maxed ? null : u.costs[lvl];
+    const afford = cost != null && g.money >= cost;
+    return `<div class="ucard">
+      <div class="ico">${u.emoji}</div>
+      <div><div class="nm">${u.name} · Lv ${lvl}${maxed ? ' (max)' : ''}</div>
+      <div class="ds">${escapeHtml(u.desc)}<br>Now: ${escapeHtml(u.at(lvl))}${maxed ? '' : ` → next: ${escapeHtml(u.at(lvl + 1))}`}</div></div>
+      <button data-up="${u.id}" ${maxed || !afford ? 'disabled' : ''}>${maxed ? 'Max' : '$' + fmtMoney(cost)}</button>
+    </div>`;
+  }).join('');
+  el('upgrades').querySelectorAll('button[data-up]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const r = buyUpgrade(ui.game, b.dataset.up);
+      if (!r.ok) toast(r.why, 'bad');
+      renderUpgrades();
+      syncStats();
+    });
+  });
+  const g2 = ui.game;
+  el('towns').innerHTML = '<div class="pane-hint">Towns on your grid</div>' + g2.cities.map((c) =>
+    `<div class="trow"><span>${c.name}</span><span>${Math.round(c.pop * g2.popGrowth)}k people · mood ${Math.round(c.mood)}%</span></div>`).join('');
+}
+
+function switchTab(name) {
+  ui.tab = name;
+  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+  document.querySelectorAll('.tabpane').forEach((p) => { p.hidden = p.dataset.pane !== name; });
+  if (name === 'upgrade') renderUpgrades();
+  if (name === 'log') renderLog();
+}
+
+// ---------------------------------------------------------------- detail -----
+
+function openDetail(uid) {
+  ui.selected = uid;
+  const g = ui.game;
+  const p = g.plants.find((q) => q.uid === uid);
+  if (!p) { closeDetail(); return; }
+  const d = PLANTS[p.id];
+  const cap = availableCapacity(g, p);
+  const box = el('detail');
+  box.hidden = false;
+  const isStore = d.kind === 'storage';
+  box.innerHTML = `
+    <h3>${d.emoji} ${d.name}</h3>
+    <div class="rowline"><span>Rated</span><b>${d.cap} MW</b></div>
+    <div class="rowline"><span>Right now</span><b>${p.on ? Math.round(p.out) + ' MW' : 'off'}</b></div>
+    <div class="rowline"><span>Weather ceiling</span><b>${isStore ? '—' : Math.round(cap) + ' MW'}</b></div>
+    ${isStore ? `<div class="rowline"><span>Stored</span><b>${Math.round(p.charge)} / ${d.energy} MWh</b></div>` : ''}
+    ${p.status === 'damaged' ? `<div class="rowline"><span>Repairing</span><b>${p.repair} h</b></div>` : ''}
+    <div class="why">${escapeHtml(d.tip)}</div>
+    <div class="acts">
+      <button data-act="toggle">${p.on ? 'Shut down' : 'Start up'}</button>
+      ${isStore ? `<button data-act="mode" data-mode="auto" class="${p.mode === 'auto' ? 'on' : ''}">Auto</button>
+        <button data-act="mode" data-mode="charge" class="${p.mode === 'charge' ? 'on' : ''}">Charge</button>
+        <button data-act="mode" data-mode="discharge" class="${p.mode === 'discharge' ? 'on' : ''}">Discharge</button>` : ''}
+      <button data-act="sell">Sell (+$${fmtMoney(Math.round(d.capex * 0.3))})</button>
+      <button data-act="close">Close</button>
+    </div>`;
+  // position inside the panel; #detail is absolute within #panel, so all
+  // coordinates here are panel-relative
+  const pb = el('panel').getBoundingClientRect();
+  const geo = ui.geo;
+  const mapRect = mapCanvas.getBoundingClientRect();
+  const absY = mapRect.top + geo.oy + (p.y + 0.5) * geo.ts - pb.top;
+  const w = 292, h = box.offsetHeight || 190;
+  box.style.left = Math.max(6, pb.width - w - 8) + 'px';
+  box.style.top = Math.max(6, Math.min(pb.height - h - 8, absY - 40)) + 'px';
+  box.querySelectorAll('button').forEach((b) => {
+    b.addEventListener('click', () => {
+      const act = b.dataset.act;
+      if (act === 'close') return closeDetail();
+      if (act === 'toggle') setPlantOn(g, uid, !p.on);
+      else if (act === 'mode') setPlantMode(g, uid, b.dataset.mode);
+      else if (act === 'sell') { const r = demolish(g, uid); if (!r.ok) toast(r.why, 'bad'); closeDetail(); return; }
+      openDetail(uid);
+      syncStats();
+    });
+  });
+}
+
+function closeDetail() {
+  ui.selected = null;
+  el('detail').hidden = true;
+}
+function syncDetailIfOpen() {
+  if (ui.selected != null) openDetail(ui.selected);
+}
+
+// ---------------------------------------------------------------- toasts -----
+
+function toast(text, kind = 'info') {
+  const box = el('toasts');
+  const d = document.createElement('div');
+  d.className = `toast ${kind === 'info' ? '' : kind}`;
+  d.textContent = text;
+  box.appendChild(d);
+  setTimeout(() => { d.style.opacity = '0'; d.style.transition = 'opacity .4s'; }, 4200);
+  setTimeout(() => d.remove(), 4700);
+  while (box.children.length > 4) box.firstChild.remove();
+}
+
+// ---------------------------------------------------------------- coach ------
+
+const COACH = [
+  { id: 'map', anchor: () => mapCanvas.getBoundingClientRect(),
+    html: 'This is your region. Every tile is a possible plant site; the <b>green bars</b> under each plant are its live output.' },
+  { id: 'panel', anchor: () => el('palette').getBoundingClientRect(),
+    html: 'Pick a plant here, then <b>click a tile</b> to build it. The ghost turns green when the site fits.' },
+  { id: 'forecast', anchor: () => el('forecast').getBoundingClientRect(),
+    html: 'The outlook strip shows the weather ahead, and <b>disaster warnings</b> appear here before they strike.' },
+  { id: 'chart', anchor: () => el('chart').getBoundingClientRect(),
+    html: 'Demand (dashed orange) vs what you supply (blue). Keep blue under the orange ceiling, and mind the tie-line limit.' },
+  { id: 'customers', anchor: () => el('stat-sat').getBoundingClientRect(),
+    html: 'Blackouts drain <b>customer goodwill</b>. If it empties, your run ends — the top bar is your health bar.' },
+];
+
+function showCoach(i) {
+  const box = el('coach');
+  if (i < 0 || i >= COACH.length) { box.hidden = true; ui.coachStep = -1; return; }
+  ui.coachStep = i;
+  const step = COACH[i];
+  box.hidden = false;
+  box.innerHTML = `${step.html}<div><button class="dismiss">${i === COACH.length - 1 ? 'Got it' : 'Next'}</button></div>`;
+  const r = step.anchor();
+  const w = 300;
+  let left = r.left + r.width / 2 - w / 2;
+  left = Math.max(10, Math.min(window.innerWidth - w - 10, left));
+  box.style.width = w + 'px';
+  box.style.left = left + 'px';
+  box.style.top = Math.min(window.innerHeight - 140, r.bottom + 10) + 'px';
+  box.querySelector('.dismiss').addEventListener('click', () => {
+    markCoach(step.id);
+    showCoach(i + 1);
+  });
+}
+
+function startCoach() {
+  const next = COACH.findIndex((c) => !seenCoach(c.id));
+  if (next < 0) return;
+  setSpeed(0);
+  showCoach(next);
+}
+
+// ---------------------------------------------------------------- modals -----
+
+function openModal(html) {
+  ui.modalOpen = true;
+  el('modal').hidden = false;
+  el('modal-card').innerHTML = html;
+  return el('modal-card');
+}
+function closeModal() {
+  ui.modalOpen = false;
+  el('modal').hidden = true;
+}
+
+function titleScreen() {
+  const meta = saveMeta();
+  const scores = listScores();
+  const scoreRows = scores.length
+    ? `<table><tr><th>Score</th><th>Days</th><th>Delivered</th><th>Ended</th></tr>${
+      scores.slice(0, 5).map((s) => `<tr><td>${s.score.toLocaleString('en-US')}</td><td>${s.days}</td><td>${s.delivered.toLocaleString('en-US')} MWh</td><td>${escapeHtml(s.reason)}</td></tr>`).join('')}</table>`
+    : '<p class="hint">No records yet.</p>';
+  const card = openModal(`
+    <h1>⚡ Gridling</h1>
+    <p>You run the electricity grid for a small region. Keep <b>supply ≥ demand</b>, keep the customers happy,
+    and keep the bank account out of the red as the years get meaner.</p>
+    <div class="acts">
+      <button class="primary" data-a="new">New run</button>
+      ${meta ? `<button data-a="continue">Continue · ${calendarText(meta.tick)}, score ${Math.round(meta.score).toLocaleString('en-US')}</button>` : ''}
+      <button data-a="help">How to play</button>
+    </div>
+    <h2>Best runs</h2>${scoreRows}
+    ${storageAvailable() ? '' : '<p class="hint">Web storage is unavailable in this browser, so saves and scores will not persist.</p>'}
+  `);
+  card.querySelector('[data-a="new"]').addEventListener('click', () => newGame());
+  const cont = card.querySelector('[data-a="continue"]');
+  if (cont) cont.addEventListener('click', () => continueGame());
+  card.querySelector('[data-a="help"]').addEventListener('click', () => helpModal());
+}
+
+function helpModal() {
+  const plantRows = PLANT_ORDER.map((id) => {
+    const d = PLANTS[id];
+    return `<tr><td>${d.emoji} ${d.name}</td><td>$${fmtMoney(d.capex)}</td><td>${d.cap} MW</td><td>${d.fuel ? '$' + d.fuel + '/MWh' : 'free'}</td><td>${escapeHtml(d.blurb)}</td></tr>`;
+  }).join('');
+  const card = openModal(`
+    <h1>How to play</h1>
+    <p><b>Goal:</b> stay powered up as long as you can. Your score grows with every MWh delivered while customers are happy.</p>
+    <h2>The loop</h2>
+    <ul>
+      <li>Pick a plant on the right, then click a tile on the map to build it.</li>
+      <li>Power must cover <b>demand</b> (the dashed orange line). Demand peaks in the <b>evening</b> and in <b>winter</b>; solar only makes power in daylight.</li>
+      <li>The forecast strip warns you about disasters before they arrive. Charge batteries and start firm plants while you still can.</li>
+      <li>Shutting a plant down <b>halves the damage</b> it takes in a disaster, but it also produces nothing.</li>
+    </ul>
+    <h2>You lose if</h2>
+    <ul><li>customer goodwill empties (long or deep blackouts), or</li><li>the bank goes more than $15k overdrawn.</li></ul>
+    <h2>The plants</h2>
+    <table><tr><th>Plant</th><th>Cost</th><th>Rated</th><th>Fuel</th><th>Notes</th></tr>${plantRows}</table>
+    <h2>Keyboard</h2>
+    <p class="hint">Space = pause · 1/2/3 = speed · Esc = cancel build or close a card · ? = this help</p>
+    <div class="acts"><button class="primary" data-a="close">Back</button></div>
+  `);
+  card.querySelector('[data-a="close"]').addEventListener('click', () => {
+    if (ui.game) closeModal(); else titleScreen();
+  });
+}
+
+function menuModal() {
+  const g = ui.game;
+  const card = openModal(`
+    <h1>Menu</h1>
+    <div class="kv"><span>Run</span><b>${calendarText(g.tick)} · ${Math.floor(g.tick / TICKS_PER_DAY)} days in</b></div>
+    <div class="kv"><span>Score</span><b>${Math.round(g.score).toLocaleString('en-US')}</b></div>
+    <div class="kv"><span>Delivered</span><b>${Math.round(g.deliveredTotal).toLocaleString('en-US')} MWh</b></div>
+    <div class="kv"><span>Cash</span><b>${g.money < 0 ? '-' : ''}$${fmtMoney(Math.abs(g.money))}</b></div>
+    <div class="acts">
+      <button data-a="save">Save now</button>
+      <button data-a="export">Export save file</button>
+      <button data-a="import">Import save file</button>
+      <button data-a="help">How to play</button>
+      <button data-a="scores">Best scores</button>
+      <button data-a="new">Start a new run</button>
+      <button class="primary" data-a="close">Resume</button>
+    </div>
+    <p class="hint">The game also autosaves every few seconds.</p>
+  `);
+  card.querySelector('[data-a="close"]').addEventListener('click', closeModal);
+  card.querySelector('[data-a="save"]').addEventListener('click', () => {
+    toast(saveGame(ui.game) ? 'Saved.' : 'Could not save — storage unavailable.', 'good');
+    menuModal();
+  });
+  card.querySelector('[data-a="export"]').addEventListener('click', () => {
+    exportFile(ui.game, `gridling-year${calendarOf(ui.game.tick).year}`);
+    toast('Save file written.', 'good');
+    menuModal();
+  });
+  card.querySelector('[data-a="import"]').addEventListener('click', () => importModal());
+  card.querySelector('[data-a="help"]').addEventListener('click', helpModal);
+  card.querySelector('[data-a="scores"]').addEventListener('click', () => { scoresModal(menuModal); });
+  card.querySelector('[data-a="new"]').addEventListener('click', () => newGame());
+}
+
+function importModal() {
+  const card = openModal(`
+    <h1>Import a save</h1>
+    <p>Choose a <code>.gridling</code> file, or paste the JSON contents.</p>
+    <input type="file" id="filein" accept=".gridling,application/json" style="width:100%">
+    <textarea id="pastetext" rows="6" placeholder="…or paste save JSON here" style="width:100%;margin-top:8px;font-family:monospace;font-size:11px"></textarea>
+    <div class="acts">
+      <button class="primary" data-a="go">Load it</button>
+      <button data-a="back">Back</button>
+    </div>
+  `);
+  card.querySelector('[data-a="back"]').addEventListener('click', menuModal);
+  card.querySelector('[data-a="go"]').addEventListener('click', () => {
+    const txt = el('pastetext').value.trim();
+    const file = el('filein').files[0];
+    const finish = (text) => {
+      try {
+        const g = importFileFromText(text);
+        adoptGame(g, 'Save imported.');
+      } catch (e) {
+        toast('Could not load save: ' + e.message, 'bad');
+      }
+    };
+    if (file) file.text().then(finish);
+    else if (txt) finish(txt);
+    else toast('Pick a file or paste the JSON first.', 'warn');
+  });
+}
+
+function scoresModal(back) {
+  const scores = listScores();
+  const card = openModal(`
+    <h1>Best runs</h1>
+    ${scores.length ? `<table><tr><th>#</th><th>Score</th><th>Days</th><th>Delivered</th><th>Peak</th><th>Goodwill</th><th>Ended</th></tr>${
+      scores.map((s, i) => `<tr><td>${i + 1}</td><td>${s.score.toLocaleString('en-US')}</td><td>${s.days}</td>
+        <td>${s.delivered.toLocaleString('en-US')}</td><td>${s.peak} MW</td><td>${s.satisfaction}%</td><td>${escapeHtml(s.reason)}</td></tr>`).join('')}</table>`
+      : '<p class="hint">Nothing yet — finish a run.</p>'}
+    <div class="acts"><button class="primary" data-a="back">Back</button><button data-a="clear">Clear scores</button></div>
+  `);
+  card.querySelector('[data-a="back"]').addEventListener('click', back);
+  card.querySelector('[data-a="clear"]').addEventListener('click', () => {
+    try { localStorage.removeItem('gridling:scores'); } catch { /* ignore */ }
+    scoresModal(back);
+  });
+}
+
+function onGameOver() {
+  const g = ui.game;
+  saveGame(g);
+  const o = g.over;
+  const entry = {
+    id: `${Date.now()}-${g.seed}`,
+    score: o.score, days: o.days, delivered: o.delivered, peak: o.peak,
+    satisfaction: o.satisfaction, reason: o.title, date: Date.now(), seed: g.seed,
+  };
+  const { list, rank } = addScore(entry);
+  const table = list.map((s, i) =>
+    `<tr><td>${i + 1}</td><td>${s.score.toLocaleString('en-US')}</td><td>${s.days}</td><td>${s.delivered.toLocaleString('en-US')}</td><td>${escapeHtml(s.reason)}</td></tr>`).join('');
+  setSpeed(0);
+  const card = openModal(`
+    <h1>${o.title === 'Bankrupt' ? '💸' : '📉'} ${escapeHtml(o.title)}</h1>
+    <p>${escapeHtml(o.detail)}</p>
+    <div class="bigscore">${o.score.toLocaleString('en-US')}</div>
+    <div class="kv"><span>You lasted</span><b>${o.days} days (Year ${calendarOf(o.tick).year})</b></div>
+    <div class="kv"><span>Energy delivered</span><b>${o.delivered.toLocaleString('en-US')} MWh</b></div>
+    <div class="kv"><span>Peak served</span><b>${o.peak} MW</b></div>
+    <div class="kv"><span>Final goodwill</span><b>${o.satisfaction}%</b></div>
+    <div class="kv"><span>Best-run ranking</span><b>#${rank || '—'} of ${list.length}</b></div>
+    <h2>Best runs</h2>
+    <table><tr><th>#</th><th>Score</th><th>Days</th><th>MWh</th><th>Ended</th></tr>${table}</table>
+    <div class="acts">
+      <button class="primary" data-a="new">New run</button>
+      <button data-a="keep">Keep looking at the map</button>
+    </div>
+  `);
+  card.querySelector('[data-a="new"]').addEventListener('click', () => newGame());
+  card.querySelector('[data-a="keep"]').addEventListener('click', closeModal);
+}
+
+// ---------------------------------------------------------------- game start --
+
+function setSpeed(n) {
+  ui.speed = n;
+  document.querySelectorAll('#speeds button').forEach((b) => b.classList.toggle('on', +b.dataset.speed === n));
+}
+
+function adoptGame(g, msg) {
+  ui.game = g;
+  ui.hist = [];
+  ui.selected = null;
+  ui.buildSel = null;
+  ui.lastLogLen = g.log.length;
+  closeDetail();
+  closeModal();
+  setSpeed(1);
+  renderPalette();
+  switchTab('build');
+  renderLog();
+  if (msg) toast(msg, 'good');
+}
+
+function newGame() {
+  adoptGame(createGame());
+  if (!seenCoach('map')) setTimeout(startCoach, 400);
+  toast('New run: Year 1, Frostbite. You start with a coal station and a gas peaker.', 'good');
+}
+
+function continueGame() {
+  const g = loadGame();
+  if (!g) { toast('No save found.', 'warn'); newGame(); return; }
+  adoptGame(g, 'Save loaded — pick up where you left off.');
+  if (g.over) onGameOver();
+}
+
+// ---------------------------------------------------------------- input ------
+
+mapCanvas.addEventListener('mousemove', (e) => {
+  if (!ui.game || !ui.geo) return;
+  const r = mapCanvas.getBoundingClientRect();
+  const t = tileAt(e.clientX - r.left, e.clientY - r.top, ui.geo);
+  ui.hover = t;
+});
+mapCanvas.addEventListener('mouseleave', () => { ui.hover = null; });
+
+mapCanvas.addEventListener('click', (e) => {
+  if (!ui.game || !ui.geo) return;
+  const r = mapCanvas.getBoundingClientRect();
+  const t = tileAt(e.clientX - r.left, e.clientY - r.top, ui.geo);
+  if (!t) return;
+  const g = ui.game;
+  if (g.over) return;
+  const existing = g.plants.find((p) => p.x === t.x && p.y === t.y);
+  if (ui.buildSel) {
+    const res = buildPlant(g, ui.buildSel, t.x, t.y);
+    if (!res.ok) { toast(res.why, 'bad'); }
+    else {
+      if (res.plant.warnings) res.plant.warnings.forEach((w) => toast(w, 'warn'));
+      renderPalette();
+      syncStats();
+    }
+    return;
+  }
+  if (existing) openDetail(existing.uid);
+  else closeDetail();
+});
+
+document.querySelectorAll('#speeds button').forEach((b) => {
+  b.addEventListener('click', () => setSpeed(+b.dataset.speed));
+});
+document.querySelectorAll('.tabs button').forEach((b) => {
+  b.addEventListener('click', () => switchTab(b.dataset.tab));
+});
+el('btn-menu').addEventListener('click', menuModal);
+el('btn-help').addEventListener('click', helpModal);
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed === 0 ? 1 : 0); }
+  else if (e.key === '1') setSpeed(1);
+  else if (e.key === '2') setSpeed(2);
+  else if (e.key === '3') setSpeed(4);
+  else if (e.key === 'Escape') {
+    if (ui.buildSel) { ui.buildSel = null; mapCanvas.classList.remove('building'); renderPalette(); }
+    else if (ui.selected != null) closeDetail();
+  } else if (e.key === '?') helpModal();
+});
+
+window.addEventListener('resize', () => { if (ui.selected != null) syncDetailIfOpen(); });
+window.addEventListener('beforeunload', () => { if (ui.game && !ui.game.over) saveGame(ui.game); });
+
+// expose a small handle for automated play-testing
+window.__gridling = {
+  ui, tick, createGame, serialize, canBuild,
+  summary: (g) => fleetSummary(g),
+  setTps: (n) => { BASE_TPS = n; },
+  buildAt: (id, x, y) => buildPlant(ui.game, id, x, y),
+  setSpeed, setTab: switchTab, newGame,
+  saveNow: () => saveGame(ui.game),
+  adoptImport: (text) => adoptGame(importFileFromText(text), 'Save imported.'),
+  cal: { calendarOf, seasonName },
+  state: () => ui.game,
+};
+
+// ---------------------------------------------------------------- boot -------
+
+app.hidden = false;
+titleScreen();
+requestAnimationFrame(frame);

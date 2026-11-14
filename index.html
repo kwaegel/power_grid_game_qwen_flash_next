@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gridling — a cosy power grid game</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app" hidden>
+
+  <header id="topbar">
+    <div class="brand">
+      <span class="logo">⚡</span>
+      <span class="wordmark">Gridling</span>
+    </div>
+
+    <div class="stat-group">
+      <div class="stat" id="stat-date" title="In-game date">
+        <span class="k">Year 1 · Frostbite 1</span>
+        <span class="v" id="v-date">Winter</span>
+      </div>
+      <div class="stat" id="stat-clock" title="Time of day">
+        <span class="k">Clock</span>
+        <span class="v" id="v-clock">06:00</span>
+      </div>
+      <div class="stat" id="stat-weather" title="Weather">
+        <span class="k">Weather</span>
+        <span class="v" id="v-weather">☀️ Clear</span>
+      </div>
+      <div class="stat money" id="stat-money" title="Cash in the bank">
+        <span class="k">Cash</span>
+        <span class="v" id="v-money">$62</span>
+      </div>
+      <div class="stat" id="stat-sat" title="Customer satisfaction — hit zero and you lose">
+        <span class="k">Customers</span>
+        <span class="v"><span class="bar"><span id="v-satfill"></span></span><span id="v-sat">74%</span></span>
+      </div>
+      <div class="stat" id="stat-score" title="Score: delivered energy × goodwill">
+        <span class="k">Score</span>
+        <span class="v" id="v-score">0</span>
+      </div>
+    </div>
+
+    <div class="speed-group" id="speeds">
+      <button data-speed="0" title="Pause (Space)">❚❚</button>
+      <button data-speed="1" class="on" title="Normal speed">▶</button>
+      <button data-speed="2" title="Fast">▶▶</button>
+      <button data-speed="4" title="Very fast">▶▶▶</button>
+    </div>
+    <div class="menu-group">
+      <button id="btn-help" title="How to play (?)">?</button>
+      <button id="btn-menu" title="Menu">☰</button>
+    </div>
+  </header>
+
+  <div id="hazardbanner" hidden></div>
+
+  <main>
+    <section id="board">
+      <div id="forecast"><span class="flabel">Outlook</span><span id="forecast-chips"></span></div>
+      <canvas id="map"></canvas>
+      <canvas id="chart" width="800" height="120"></canvas>
+      <div id="ticker"></div>
+    </section>
+
+    <aside id="panel">
+      <div class="tabs">
+        <button data-tab="build" class="on">Build</button>
+        <button data-tab="upgrade">Upgrade</button>
+        <button data-tab="log">Report</button>
+      </div>
+
+      <div class="tabpane" data-pane="build">
+        <p class="pane-hint">Pick a plant, then click a tile. Green means it fits there.</p>
+        <div id="palette"></div>
+      </div>
+
+      <div class="tabpane" data-pane="upgrade" hidden>
+        <p class="pane-hint">Upgrades are permanent for this run and make disasters survivable.</p>
+        <div id="upgrades"></div>
+        <div id="towns"></div>
+      </div>
+
+      <div class="tabpane" data-pane="log" hidden>
+        <div id="log"></div>
+      </div>
+
+      <div id="detail" hidden></div>
+    </aside>
+  </main>
+
+  <div id="coach" hidden></div>
+  <div id="toasts"></div>
+</div>
+
+<div id="modal" hidden>
+  <div id="modal-card"></div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
