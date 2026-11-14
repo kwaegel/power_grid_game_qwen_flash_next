@@ -2,14 +2,14 @@
 
 import {
   createGame, tick, buildPlant, demolish, canBuild, setPlantOn, setPlantMode,
-  buyUpgrade, fleetSummary, demandMW, serialize, PLANTS, PLANT_ORDER, HAZARDS, WEATHER,
-  UPGRADES, money as fmtMoney, calendarOf, seasonName, hourOf, availableCapacity,
-  START_MONEY, MAP_COLS, MAP_ROWS, T, TERRAIN_NAMES,
+  buyUpgrade, fleetSummary, serialize, PLANTS, PLANT_ORDER, HAZARDS, WEATHER,
+  UPGRADES, money as fmtMoney, seasonName, hourOf, availableCapacity,
+  MAP_COLS, MAP_ROWS,
 } from './sim/engine.js';
-import { DAYS_PER_MONTH, MONTH_NAMES, TICKS_PER_DAY } from './sim/world.js';
+import { MONTH_NAMES, TICKS_PER_DAY, calendarOf } from './sim/world.js';
 import { drawWorld, layout, tileAt, drawChart } from './render.js';
 import {
-  saveGame, loadGame, hasSave, saveMeta, clearSave, exportFile, importFileFromText,
+  saveGame, loadGame, saveMeta, clearSave, exportFile, importFileFromText,
   listScores, addScore, seenCoach, markCoach, storageAvailable,
 } from './storage.js';
 
@@ -395,6 +395,7 @@ function titleScreen() {
       <button class="primary" data-a="new">New run</button>
       ${meta ? `<button data-a="continue">Continue · ${calendarText(meta.tick)}, score ${Math.round(meta.score).toLocaleString('en-US')}</button>` : ''}
       <button data-a="help">How to play</button>
+      ${meta ? '<button data-a="forget">Delete saved run</button>' : ''}
     </div>
     <h2>Best runs</h2>${scoreRows}
     ${storageAvailable() ? '' : '<p class="hint">Web storage is unavailable in this browser, so saves and scores will not persist.</p>'}
@@ -402,7 +403,9 @@ function titleScreen() {
   card.querySelector('[data-a="new"]').addEventListener('click', () => newGame());
   const cont = card.querySelector('[data-a="continue"]');
   if (cont) cont.addEventListener('click', () => continueGame());
-  card.querySelector('[data-a="help"]').addEventListener('click', () => helpModal());
+  const forget = card.querySelector('[data-a="forget"]');
+  if (forget) forget.addEventListener('click', () => { clearSave(); toast('Saved run deleted.', 'warn'); titleScreen(); });
+  card.querySelector('[data-a="help"]').addEventListener('click', helpModal);
 }
 
 function helpModal() {
@@ -646,6 +649,7 @@ window.__gridling = {
   buildAt: (id, x, y) => buildPlant(ui.game, id, x, y),
   setSpeed, setTab: switchTab, newGame,
   saveNow: () => saveGame(ui.game),
+  sell: (uid) => demolish(ui.game, uid),
   adoptImport: (text) => adoptGame(importFileFromText(text), 'Save imported.'),
   cal: { calendarOf, seasonName },
   state: () => ui.game,

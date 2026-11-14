@@ -1,0 +1,108 @@
+# ⚡ Gridling
+
+A small, cosy power-grid management game that runs entirely in your browser — no
+backend, no build step, no network access needed once the files are served.
+
+You run the electricity grid for a small region. Keep supply matched to demand,
+keep the customers happy, keep the bank out of the red, and try to survive as the
+years get meaner.
+
+## Run it
+
+One command, from this folder:
+
+```bash
+node server.mjs
+```
+
+then open <http://localhost:8000>. Pass a port to change it: `node server.mjs 1234`.
+
+Any other static file server works too (the game is plain ES modules — `index.html`,
+`styles.css`, `src/`). If you open `index.html` straight from disk with `file://`,
+module loading is blocked by browser security, so use a server.
+
+Target: desktop browser with a mouse, Chrome/Edge/Firefox/Safari from the last couple
+of years.
+
+## How to play
+
+**Your job:** for every hour of the game, the power you make has to cover the power
+the towns want. The chart under the map shows both — dashed orange is demand, the
+solid blue line is what you actually delivered. Red stubs between them are blackouts.
+
+**Building:** pick a plant in the right-hand panel, then click a tile on the map. The
+ghost preview turns green when the site is legal. Click a plant you already own to
+start/stop it, change a battery's mode, or sell it.
+
+**You lose when** the customer goodwill bar (top bar) empties, or the bank falls more
+than $12k below zero. Your score grows with every MWh delivered while customers are
+happy, so a blackout costs you twice.
+
+**The rhythm of a year.** Demand peaks around 18:00 every day, with a smaller morning
+bump. Winter is much heavier (heating) and summer has an afternoon air-conditioning
+bump. A run starts in spring, so the first winter, about 45 days in, is your first
+real exam. Solar makes nothing at night; wind is strongest in autumn and winter and
+can go quiet for days during a calm spell; hydro swells in the spring melt and shrinks
+in a drought.
+
+**Disasters** appear first as a warning in the outlook strip and a banner across the
+top: a windstorm, ice storm, heatwave, drought, earthquake, line fault, plant fire or
+cold snap. You get real time to prepare:
+
+- Charge batteries while the warning is up (set them to *Charge*, or just let the
+  surplus fill them).
+- Bring firm plants (coal, gas, hydro) up early — coal is slow to ramp.
+- **Shutting a plant down halves the damage it takes.** Shut your turbines before a
+  windstorm; you lose their output but keep the machines.
+
+Upgrades (Upgrade tab) are permanent for the run: a bigger tie-line, a Weather Desk
+that lengthens warnings, a Smart Grid that forgives shortfalls, faster Repair Crews.
+
+**Rising difficulty.** Every new year the towns grow ~10%, disasters come more often
+and hit harder, and new towns connect to your grid. A run always ends; the trick is to
+out-build the growth curve for as long as you can.
+
+Keyboard (optional): `Space` pause, `1`/`2`/`3` speed, `Esc` cancel a build or close a
+card, `?` help.
+
+### The plants
+
+| Plant | Cost | Rated | Fuel | Tradeoff |
+|---|---|---|---|---|
+| 🔆 Solar Farm | $40 | 12 MW | free | zero at night, weak in winter/storms |
+| 🌀 Wind Turbine | $65 | 10 MW | free | +28% on hills, lulls for days, fragile in storms |
+| 💧 Run-of-River | $95 | 14 MW | free | dispatchable and free, but only 4 river sites, seasonal |
+| 🏭 Coal Station | $130 | 30 MW | $3.2 | firm all hours, slow ramp, smog caps goodwill, max 3 |
+| 🔥 Gas Peaker | $55 | 12 MW | $7.5 | instant and cheap to build, ruinous fuel bill |
+| ⚛️ Nuclear Plant | $320 | 60 MW | $0.5 | enormous and cheap to run, needs cooling water, meltdown risk |
+| 🔋 Battery Bank | $70 | 10 MW / 60 MWh | — | buys firmness without fuel, 90% round-trip, max 8 |
+
+There is no single right answer: cheap-free-but-intermittent against firm-but-expensive,
+against the capital that any of it takes out of your reserve fund.
+
+## Saving
+
+The game autosaves every few seconds into `localStorage`; the title screen offers
+**Continue** after a reload. The ☰ menu can also **Save now**, **Export save file**
+(writes a `.gridling` JSON file), **Import save file** (a file picker, or paste the
+JSON), and show **Best scores**. Best scores live in `localStorage` as a top-10 list.
+
+## Development
+
+No dependencies, no bundler, no build.
+
+```
+index.html          markup
+styles.css          all styling
+server.mjs          tiny static server (the one command above)
+src/main.js         loop, input, panels, coach marks
+src/render.js       canvas drawing: terrain, plants, weather, chart
+src/storage.js      autosave, best scores, export/import
+src/sim/            the simulation (no DOM): engine, plants, hazards, world, rng
+tools/balance.mjs   headless balance harness: node tools/balance.mjs 12
+tools/e2e/play.mjs  Chromium play-test driver (needs playwright-core, see tools/e2e)
+```
+
+`tools/balance.mjs` runs scripted players (idle / greedy / steady / careful) against
+identical seeds and reports how long each survives — that is how the difficulty curve
+was tuned. `tools/e2e/play.mjs` drives the real game in a real browser.

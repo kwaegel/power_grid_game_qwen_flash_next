@@ -168,11 +168,42 @@ function nearRiverTiles(g) {
   return false;
 }
 
+// "steady": what a plausible human does — decides once per in-game day, using only
+// what the screen shows (current demand, the forecast strip), never the demand curve.
+const steadyPolicy = {
+  name: 'steady',
+  lastDay: -1,
+  act(g) {
+    const h = g.hazard;
+    for (const p of g.plants) {
+      if (PLANTS[p.id].kind !== 'storage') continue;
+      setPlantMode(g, p.uid, h && h.phase === 'warn' ? 'charge' : 'auto');
+    }
+    const day = Math.floor(g.tick / TICKS_PER_DAY);
+    const hour = g.tick % TICKS_PER_DAY;
+    if (day === this.lastDay || hour !== 9) return;
+    this.lastDay = day;
+    const s = fleetSummary(g);
+    const n = (id) => g.plants.filter((p) => p.id === id).length;
+    if (g.money < 10) return;
+    if (n('hydro') < 2 && g.money > 110) { build(g, 'hydro', { riverFirst: true }); return; }
+    if (s.firm + s.stored / 4 < g.lastDemand * 1.3) {
+      if (g.money > 140 && n('coal') < 3) { build(g, 'coal'); return; }
+      if (g.money > 60) { build(g, 'gas'); return; }
+    }
+    if (n('battery') < 4 && g.money > 80) { build(g, 'battery'); return; }
+    if (g.money > 150 && (g.upgrades.link || 0) < 3) { buyUpgrade(g, 'link'); return; }
+    if (g.money > 90 && (g.upgrades.forecast || 0) < 2) { buyUpgrade(g, 'forecast'); return; }
+    if (g.money > 120 && n('solar') < 5) { build(g, 'solar'); return; }
+    if (g.money > 120) { build(g, 'wind', { hillFirst: true }); return; }
+  },
+};
+
 // ---- main -------------------------------------------------------------------
 
 const args = process.argv.slice(2);
 const nSeeds = Number(args[0] || 8);
-const policies = [idlePolicy, greedyPolicy, carefulPolicy];
+const policies = [idlePolicy, greedyPolicy, steadyPolicy, carefulPolicy];
 const rows = [];
 for (const pol of policies) {
   for (let i = 0; i < nSeeds; i++) rows.push(run(pol, 1000 + i * 7919));

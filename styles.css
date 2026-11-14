@@ -110,6 +110,7 @@ main {
   flex: 1 1 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: minmax(0, 1fr);
   gap: 10px;
   padding: 10px;
   min-height: 0;
@@ -128,12 +129,9 @@ main {
   padding: 6px 12px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  box-shadow: var(--shadow);
 }
 .flabel { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--ink-soft); }
 .chip {
-  background: var(--card-2);
   border-radius: 10px;
   padding: 3px 9px;
   margin-right: 5px;

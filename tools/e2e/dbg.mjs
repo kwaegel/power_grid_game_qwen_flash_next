@@ -1,0 +1,18 @@
+import { chromium } from 'playwright-core';
+import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path';
+const ROOT='/home/ky/dev/power_grid_game_qwen_flash_next';
+const MIME={'.html':'text/html','.js':'text/javascript','.css':'text/css'};
+const srv=http.createServer((q,r)=>{const u=q.url.split('?')[0];const f=path.join(ROOT,u==='/'?'index.html':u);if(!fs.existsSync(f)){r.writeHead(404);r.end();return;}r.writeHead(200,{'content-type':MIME[path.extname(f)]||'text/plain'});fs.createReadStream(f).pipe(r);});
+await new Promise(res=>srv.listen(8144,'127.0.0.1',res));
+const b=await chromium.launch({executablePath:'/usr/local/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
+const p=await b.newPage();
+p.on('console',m=>console.log('CONSOLE',m.type(),m.text()));
+p.on('pageerror',e=>console.log('PAGEERROR',e.stack||String(e)));
+p.on('requestfailed',r=>console.log('REQFAIL',r.url(),r.failure()?.errorText));
+await p.goto('http://127.0.0.1:8144/');
+await p.waitForTimeout(1200);
+console.log('modal hidden?', await p.evaluate(()=>document.getElementById('modal')?.hidden));
+console.log('h1?', await p.evaluate(()=>document.querySelector('#modal-card h1')?.textContent));
+console.log('app hidden?', await p.evaluate(()=>document.getElementById('app')?.hidden));
+console.log('handle?', await p.evaluate(()=>Object.keys(window.__gridling||{}).join(',')));
+await b.close(); srv.close();

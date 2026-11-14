@@ -25,6 +25,7 @@ const GROUND = {
 };
 
 const INK = '#4a4453';
+const SOFT = 'rgba(74,68,83,0.14)';
 let NIGHT = 0;   // night darkness for the current frame (town window glow)
 
 export function tileAt(pX, pY, geo) {
@@ -520,7 +521,6 @@ function flame(ctx, x, y, anim, u) {
 }
 
 function drawWeatherFx(ctx, game, geo, anim) {
-  const { ctx: _c } = geo;
   const { ts, ox, oy, cols, rows, w, h } = geo;
   const wx = game.weather;
   const n = wx === 'rain' || wx === 'storm' ? 90 : wx === 'snow' ? 70 : 0;

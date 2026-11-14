@@ -1,0 +1,538 @@
+{
+ "app": "gridling",
+ "version": 5,
+ "kind": "save",
+ "data": {
+  "version": 5,
+  "seed": 468131520,
+  "rng": 1746040754,
+  "tick": 708,
+  "money": 35.680057865282684,
+  "score": 33496.17712979875,
+  "deliveredTotal": 22566.33806525396,
+  "peakMW": 75.93173432081446,
+  "map": [
+   [
+    0,
+    0,
+    0,
+    4,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    4,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    4,
+    0,
+    0,
+    1,
+    0,
+    0,
+    4,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    4,
+    1,
+    0,
+    0,
+    0,
+    0,
+    4,
+    0,
+    1,
+    1,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    3,
+    0,
+    4,
+    0,
+    1,
+    1,
+    7,
+    7,
+    0,
+    3,
+    1,
+    0,
+    1,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    4,
+    0,
+    3,
+    1,
+    0,
+    0,
+    4,
+    3,
+    1,
+    3,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    2,
+    7,
+    0,
+    0,
+    3,
+    0,
+    4,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    1,
+    1,
+    2,
+    2,
+    4,
+    2,
+    0,
+    3,
+    0,
+    4,
+    0,
+    0,
+    0,
+    7,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    2,
+    2,
+    4,
+    0,
+    0,
+    0,
+    4,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    4,
+    2,
+    2,
+    0,
+    4,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  ],
+  "cities": [
+   {
+    "x": 9,
+    "y": 3,
+    "name": "Pebbleton",
+    "pop": 9,
+    "mood": 100,
+    "satisfaction": 70,
+    "delivered": 0,
+    "served": 0
+   },
+   {
+    "x": 4,
+    "y": 5,
+    "name": "Tumblewood",
+    "pop": 14,
+    "mood": 100,
+    "satisfaction": 70,
+    "delivered": 0,
+    "served": 0
+   },
+   {
+    "x": 14,
+    "y": 6,
+    "name": "Hearthstead",
+    "pop": 14,
+    "mood": 100,
+    "satisfaction": 70,
+    "delivered": 0,
+    "served": 0
+   },
+   {
+    "x": 8,
+    "y": 3,
+    "name": "Larkspur",
+    "pop": 12,
+    "cityMult": 0.9,
+    "mood": 100,
+    "satisfaction": 60,
+    "delivered": 0,
+    "served": 0
+   }
+  ],
+  "plants": [
+   {
+    "uid": 1,
+    "id": "coal",
+    "x": 0,
+    "y": 0,
+    "alive": true,
+    "on": true,
+    "out": 13.157892254366537,
+    "mode": "auto",
+    "hp": 100,
+    "status": "ok",
+    "repair": 0,
+    "charge": 0,
+    "builtTick": 0
+   },
+   {
+    "uid": 2,
+    "id": "gas",
+    "x": 0,
+    "y": 0,
+    "alive": true,
+    "on": true,
+    "out": 0,
+    "mode": "auto",
+    "hp": 100,
+    "status": "ok",
+    "repair": 0,
+    "charge": 0,
+    "builtTick": 0
+   },
+   {
+    "uid": 3,
+    "id": "solar",
+    "x": 1,
+    "y": 0,
+    "alive": true,
+    "on": true,
+    "out": 1.756653590325445,
+    "mode": "auto",
+    "hp": 100,
+    "status": "ok",
+    "repair": 0,
+    "charge": 0,
+    "builtTick": 8
+   },
+   {
+    "uid": 4,
+    "id": "hydro",
+    "x": 3,
+    "y": 0,
+    "alive": true,
+    "on": true,
+    "out": 11.9,
+    "mode": "auto",
+    "hp": 100,
+    "status": "ok",
+    "repair": 0,
+    "charge": 0,
+    "builtTick": 22
+   },
+   {
+    "uid": 5,
+    "id": "hydro",
+    "x": 10,
+    "y": 0,
+    "alive": true,
+    "on": true,
+    "out": 11.9,
+    "mode": "auto",
+    "hp": 100,
+    "status": "ok",
+    "repair": 0,
+    "charge": 0,
+    "builtTick": 110
+   },
+   {
+    "uid": 6,
+    "id": "battery",
+    "x": 2,
+    "y": 0,
+    "alive": true,
+    "on": true,
+    "out": 0,
+    "mode": "auto",
+    "hp": 100,
+    "status": "ok",
+    "repair": 0,
+    "charge": 4.346647351732372,
+    "builtTick": 137,
+    "_d": 0
+   },
+   {
+    "uid": 7,
+    "id": "battery",
+    "x": 4,
+    "y": 0,
+    "alive": true,
+    "on": true,
+    "out": 0,
+    "mode": "auto",
+    "hp": 100,
+    "status": "ok",
+    "repair": 0,
+    "charge": 0,
+    "builtTick": 411,
+    "_d": 0
+   },
+   {
+    "uid": 8,
+    "id": "battery",
+    "x": 5,
+    "y": 0,
+    "alive": true,
+    "on": true,
+    "out": 0,
+    "mode": "auto",
+    "hp": 100,
+    "status": "ok",
+    "repair": 0,
+    "charge": 21,
+    "builtTick": 620,
+    "_d": 0
+   }
+  ],
+  "nextPlantId": 9,
+  "weather": "overcast",
+  "weatherTicksLeft": 5,
+  "forecast": [
+   "cloudy",
+   "clear",
+   "rain"
+  ],
+  "hazard": null,
+  "hazardCooldown": -34,
+  "upgrades": {
+   "link": 2,
+   "forecast": 2,
+   "smart": 0,
+   "crew": 2
+  },
+  "satisfaction": 97.89973511823385,
+  "blackoutTicks": 18,
+  "nextCityTick": 1280,
+  "lastYear": 1,
+  "popGrowth": 1,
+  "sevMult": 1,
+  "rateMult": 1,
+  "log": [
+   {
+    "tick": 0,
+    "text": "Welcome to the regional grid. Keep the lights on and the books out of the red.",
+    "kind": "good"
+   },
+   {
+    "tick": 0,
+    "text": "Demand peaks near 18:00 and all through winter. The outlook strip above the map is your early warning.",
+    "kind": "info"
+   },
+   {
+    "tick": 8,
+    "text": "Solar Farm built for $40.",
+    "kind": "good"
+   },
+   {
+    "tick": 22,
+    "text": "Run-of-River Station built for $95.",
+    "kind": "good"
+   },
+   {
+    "tick": 35,
+    "text": "Grid Link upgraded to level 1 for $35.",
+    "kind": "good"
+   },
+   {
+    "tick": 40,
+    "text": "Weather Desk upgraded to level 1 for $15.",
+    "kind": "good"
+   },
+   {
+    "tick": 46,
+    "text": "Repair Crews upgraded to level 1 for $12.",
+    "kind": "good"
+   },
+   {
+    "tick": 68,
+    "text": "⚡ Forecast warning: Line Fault incoming. Your grid link will be throttled — pre-charge batteries to cover the cities.",
+    "kind": "warn"
+   },
+   {
+    "tick": 78,
+    "text": "Grid Link upgraded to level 2 for $55.",
+    "kind": "good"
+   },
+   {
+    "tick": 81,
+    "text": "⚡ Line Fault has struck! A major transmission line is about to trip.",
+    "kind": "bad"
+   },
+   {
+    "tick": 84,
+    "text": "Weather Desk upgraded to level 2 for $34.",
+    "kind": "good"
+   },
+   {
+    "tick": 90,
+    "text": "Repair Crews upgraded to level 2 for $28.",
+    "kind": "good"
+   },
+   {
+    "tick": 95,
+    "text": "⚡ The line fault has passed.",
+    "kind": "good"
+   },
+   {
+    "tick": 100,
+    "text": "— Bloom, Year 1 · Spring —",
+    "kind": "info"
+   },
+   {
+    "tick": 110,
+    "text": "Run-of-River Station built for $95.",
+    "kind": "good"
+   },
+   {
+    "tick": 137,
+    "text": "Battery Bank built for $70.",
+    "kind": "good"
+   },
+   {
+    "tick": 200,
+    "text": "— Green, Year 1 · Spring —",
+    "kind": "info"
+   },
+   {
+    "tick": 287,
+    "text": "⚡ Forecast warning: Line Fault incoming. Your grid link will be throttled — pre-charge batteries to cover the cities.",
+    "kind": "warn"
+   },
+   {
+    "tick": 300,
+    "text": "— Longlight, Year 1 · Summer —",
+    "kind": "info"
+   },
+   {
+    "tick": 305,
+    "text": "⚡ Line Fault has struck! A major transmission line is about to trip.",
+    "kind": "bad"
+   },
+   {
+    "tick": 319,
+    "text": "⚡ The line fault has passed.",
+    "kind": "good"
+   },
+   {
+    "tick": 400,
+    "text": "— Scorch, Year 1 · Summer —",
+    "kind": "info"
+   },
+   {
+    "tick": 411,
+    "text": "Battery Bank built for $70.",
+    "kind": "good"
+   },
+   {
+    "tick": 500,
+    "text": "— Harvest, Year 1 · Summer —",
+    "kind": "info"
+   },
+   {
+    "tick": 520,
+    "text": "🏘️ Larkspur has joined the grid — demand rises for good.",
+    "kind": "warn"
+   },
+   {
+    "tick": 593,
+    "text": "🔥 Forecast warning: Plant Fire incoming. Fire crews will repair it; the cost is unavoidable, the blackout is not.",
+    "kind": "warn"
+   },
+   {
+    "tick": 600,
+    "text": "— Amber, Year 1 · Autumn —",
+    "kind": "info"
+   },
+   {
+    "tick": 602,
+    "text": "🔥 Plant Fire has struck! A fire has broken out at one of your thermal stations.",
+    "kind": "bad"
+   },
+   {
+    "tick": 602,
+    "text": "🏭 Coal Station damaged — crew dispatched ($3).",
+    "kind": "bad"
+   },
+   {
+    "tick": 611,
+    "text": "🏭 Coal Station is repaired and back to full output.",
+    "kind": "good"
+   },
+   {
+    "tick": 620,
+    "text": "Battery Bank built for $70.",
+    "kind": "good"
+   },
+   {
+    "tick": 622,
+    "text": "🔥 The plant fire has passed.",
+    "kind": "good"
+   },
+   {
+    "tick": 700,
+    "text": "— Gale, Year 1 · Autumn —",
+    "kind": "info"
+   }
+  ],
+  "over": null
+ }
+}

@@ -104,6 +104,12 @@ export function createGame(seed = randomSeed()) {
     p.out = PLANTS.gas.cap;
   }
 
+  // Prime the readouts so the very first frame already shows a powered region.
+  const d0 = demandMW(game);
+  game.lastDemand = d0;
+  game.lastServed = Math.min(d0, PLANTS.coal.cap + PLANTS.gas.cap, linkCapacity(game));
+  game.lastGen = { coal: PLANTS.coal.cap, gas: game.lastServed - PLANTS.coal.cap };
+
   const cal0 = calendarOf(0);
   game.weather = rng.weighted(weatherCandidates(cal0.season, cal0.month, null));
   game.forecast = rollForecast(game, rng);
@@ -239,8 +245,8 @@ export function buyUpgrade(game, id) {
 // ---- capacity factors --------------------------------------------------------
 
 export function daylight(hour) {
-  if (hour <= 5 || hour >= 19) return 0;      // sunrise ~06, sunset ~19
-  return Math.sin(((hour - 6) / 13) * Math.PI);
+  if (hour <= 5 || hour >= 19) return 0;        // sunrise ~05:30, sunset ~18:30
+  return Math.sin(((hour - 5.5) / 13) * Math.PI);
 }
 
 export function solarFactor(weather, month, hour) {
@@ -561,10 +567,14 @@ function applyInitialDamage(game, rng, h) {
   for (let i = 0; i < n; i++) damagePlant(game, rng, targets[i], hdef);
 }
 
+// A plant that is shut down is far less likely to be hurt by a hazard.
+export function damageRoll(rng, shielded) {
+  return shielded ? rng.next() * 0.5 : rng.next();
+}
 function damagePlant(game, rng, p, hdef) {
   const def = PLANTS[p.id];
-  const shielded = !p.on;                     // shutting a plant down halves its damage
-  if ((shielded ? rng.next() * 0.5 : rng.next()) < 0.35) return;
+  const shielded = !p.on;                     // shutting a plant down halves its risk
+  if (damageRoll(rng, shielded) < 0.35) return;
   const dmg = Math.round(hdef.repairCost * 100 * (shielded ? 0.5 : 1) * game.sevMult * rng.range(0.7, 1.3));
   p.hp -= dmg;
   if (p.hp <= 0) {
