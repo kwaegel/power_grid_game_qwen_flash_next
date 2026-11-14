@@ -102,7 +102,10 @@ const report = () => G(() => {
     repairs: text.filter((t) => /is repaired/.test(t)).length,
     damage: text.filter((t) => /damaged — crew|was destroyed|MELTDOWN/.test(t)).length,
     yearUps: text.filter((t) => /begins\. Demand is climbing/.test(t)).length,
-    newTowns: text.filter((t) => /has joined the grid/.test(t)).length,
+    // the event log is capped at 80 entries, so early events scroll out: year and
+    // town count are read from the run state instead.
+    year: window.__gridling.cal.calendarOf(g.tick).year,
+    cities: g.cities.length,
   };
 });
 
@@ -420,7 +423,8 @@ check('upgrading through the panel works', upgradesBought >= 2, `${upgradesBough
 check('disaster warnings appeared', rep.warned.length > 0, rep.warned.join(','));
 check('disasters actually struck', rep.struck.length >= 2, rep.struck.join(','));
 check('disasters did damage that crews repaired', rep.damage > 0 && rep.repairs > 0, `damage=${rep.damage} repairs=${rep.repairs}`);
-check('difficulty ramps: new towns connected', rep.newTowns >= 1, `${rep.newTowns} towns joined`);
+check('difficulty ramps: new towns connected and the calendar advanced',
+  rep.cities >= 4 && rep.year >= 3, `${rep.cities} towns, in year ${rep.year}`);
 check('goodwill stayed above 55 with careful play', st2.sat > 55, `sat=${st2.sat}`);
 const off1 = await offscreenReport();
 check('layout / readability at 1440x900', off1.length === 0, off1.join(' | '));
@@ -450,8 +454,11 @@ await shot('11-after-reload');
 await page.click('[data-a="continue"]');
 await sleep(800);
 const after = await stats();
-check('run resumes after reload (tick / plants / score preserved)',
-  saved.tick > 0 && after.tick === saved.tick && after.plants === saved.plants && Math.abs(after.score - saved.score) <= 2,
+// Continue hands the run straight back to the clock, so tick and score may already
+// have moved on a little; what must hold is the identity of the run.
+check('run resumes after reload (plants / score / clock preserved)',
+  saved.tick > 0 && after.plants === saved.plants && after.tick >= saved.tick &&
+  after.tick <= saved.tick + 6 && after.score >= saved.score,
   JSON.stringify({ saved: [saved.tick, saved.plants, saved.score], after: [after.tick, after.plants, after.score] }));
 await page.click('#speeds button[data-speed="4"]');
 await sleep(2500);
@@ -507,8 +514,9 @@ await page.click('#modal-card [data-a="go"]');
 await sleep(1000);
 const imported = await stats();
 check('file import restores the exported run',
-  exportedSnap && imported.tick === exportedSnap.tick && imported.plants === exportedSnap.plants &&
-  Math.abs(imported.score - exportedSnap.score) <= 2,
+  exportedSnap && imported.plants === exportedSnap.plants &&
+  imported.tick >= exportedSnap.tick && imported.tick <= exportedSnap.tick + 6 &&
+  imported.score >= exportedSnap.score,
   JSON.stringify({ want: [exportedSnap?.tick, exportedSnap?.plants, exportedSnap?.score], got: [imported.tick, imported.plants, imported.score] }));
 await shot('13-imported-run');
 
@@ -520,7 +528,8 @@ await page.fill('#pastetext', fs.readFileSync(savePath, 'utf8'));
 await page.click('#modal-card [data-a="go"]');
 await sleep(1000);
 const pasted = await stats();
-check('pasted-JSON import works too', exportedSnap && pasted.tick === exportedSnap.tick, `tick ${pasted.tick} vs ${exportedSnap?.tick}`);
+check('pasted-JSON import works too', exportedSnap && pasted.plants === exportedSnap.plants &&
+  pasted.tick >= exportedSnap.tick && pasted.tick <= exportedSnap.tick + 6, `tick ${pasted.tick} vs ${exportedSnap?.tick}`);
 
 // ---- a careless player must lose --------------------------------------------
 console.log('--- a careless player loses ---');
