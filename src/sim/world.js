@@ -148,6 +148,12 @@ const CITY_NAMES = [
   'Pebbleton', 'Willowmere', 'Acornvale', 'Mistral Bay', 'Tumblewood', 'Hearthstead',
 ];
 
+// towns that connect later in a run, kept distinct from the founding names so a
+// map never shows the same label twice
+export const NEW_TOWN_NAMES = [
+  'Copperfield', 'Fernbrook', 'Stonegate', 'Larkspur', 'Bramblewick', 'Dunmoor',
+];
+
 export function generateCities(rng, map) {
   const spots = [];
   for (let r = 1; r < MAP_ROWS - 1; r++)

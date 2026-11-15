@@ -10,7 +10,7 @@ import { PLANTS, PLANT_ORDER, FUEL_COST } from './plants.js';
 import {
   TICKS_PER_DAY, HOURS_PER_DAY, DAYS_PER_MONTH, DAYS_PER_YEAR,
   MONTH_NAMES, MAP_COLS, MAP_ROWS, T, TERRAIN_NAMES,
-  generateMap, generateCities, demandCurve, seasonOf, calendarOf,
+  generateMap, generateCities, demandCurve, seasonOf, calendarOf, NEW_TOWN_NAMES,
 } from './world.js';
 import { WEATHER, weatherCandidates, HAZARDS, hazardCandidates } from './hazards.js';
 import { makeRng, randomSeed } from './rng.js';
@@ -25,25 +25,25 @@ export const DEMAND_TOLERANCE = [0.02, 0.07, 0.12];
 
 export const UPGRADES = {
   link: {
-    id: 'link', name: 'Grid Link', emoji: '🔗', max: 5,
+    id: 'link', name: 'Grid Link', icon: 'upgrade:link', max: 5,
     costs: [35, 55, 80, 110, 150],
     desc: 'How much power the regional tie-line can carry.',
     at: (lvl) => `${BASE_LINK_MW + LINK_PER_LEVEL_MW * lvl} MW`,
   },
   forecast: {
-    id: 'forecast', name: 'Weather Desk', emoji: '📡', max: 2,
+    id: 'forecast', name: 'Weather Desk', icon: 'upgrade:forecast', max: 2,
     costs: [15, 34],
     desc: 'Earlier disaster warnings and a longer weather outlook.',
     at: (lvl) => ['base warning', 'warning ×1.6', 'warning ×2.2'][lvl],
   },
   smart: {
-    id: 'smart', name: 'Smart Grid', emoji: '🧠', max: 2,
+    id: 'smart', name: 'Smart Grid', icon: 'upgrade:smart', max: 2,
     costs: [18, 40],
     desc: 'Customers tolerate brief shortfalls and rebuild goodwill faster.',
     at: (lvl) => ['no tolerance', 'up to 7% unmet OK', 'up to 12% unmet OK'][lvl],
   },
   crew: {
-    id: 'crew', name: 'Repair Crews', emoji: '🛠️', max: 2,
+    id: 'crew', name: 'Repair Crews', icon: 'upgrade:crew', max: 2,
     costs: [12, 28],
     desc: 'Damaged plants are back online sooner.',
     at: (lvl) => ['normal speed', '30% faster', '50% faster'][lvl],
@@ -74,7 +74,10 @@ export function createGame(seed = randomSeed()) {
     weatherTicksLeft: 6,
     forecast: [],
     hazard: null,
-    hazardCooldown: 30,          // grace period: the first warning comes early enough to matter
+    // opening grace, in ticks: nothing can warn before the player has had a few
+    // build cycles. A seed where a fire takes the starter coal station on day 4 is
+    // not a hard decision, it is a coin flip that ends a brand-new run.
+    hazardCooldown: TICKS_PER_DAY * 10,
     upgrades: { link: 0, forecast: 0, smart: 0, crew: 0 },
     satisfaction: 80,
     blackoutTicks: 0,
@@ -505,10 +508,10 @@ function stepHazard(game, rng) {
     if (h.phase === 'warn' && h.ticksLeft <= 0) {
       h.phase = 'active';
       h.ticksLeft = Math.round(HAZARDS[h.id].duration * game.sevMult);
-      pushLog(game, `${HAZARDS[h.id].emoji} ${HAZARDS[h.id].name} has struck! ${HAZARDS[h.id].text}`, 'bad');
+      pushLog(game, `${HAZARDS[h.id].name} has struck! ${HAZARDS[h.id].text}`, 'bad', HAZARDS[h.id].icon);
       applyInitialDamage(game, rng, h);
     } else if (h.phase === 'active' && h.ticksLeft <= 0) {
-      pushLog(game, `${HAZARDS[h.id].emoji} The ${HAZARDS[h.id].name.toLowerCase()} has passed.`, 'good');
+      pushLog(game, `The ${HAZARDS[h.id].name.toLowerCase()} has passed.`, 'good', HAZARDS[h.id].icon);
       game.hazard = null;
       game.hazardCooldown = Math.round(rng.range(22, 52) / game.rateMult);
     }
@@ -522,7 +525,7 @@ function stepHazard(game, rng) {
   const hdef = HAZARDS[id];
   const w = warnTicks(game, hdef);
   game.hazard = { id, phase: 'warn', ticksLeft: w, warnTotal: w };
-  pushLog(game, `${hdef.emoji} Forecast warning: ${hdef.name} incoming. ${hdef.advice}`, 'warn');
+  pushLog(game, `Forecast warning: ${hdef.name} incoming. ${hdef.advice}`, 'warn', hdef.icon);
 }
 
 function eligibleTargets(game, hdef) {
@@ -557,7 +560,7 @@ function applyInitialDamage(game, rng, h) {
       if (d > hdef.damageNear) continue;
       if (rng.chance(d === 0 ? 0.85 : d === 1 ? 0.55 : 0.25)) { damagePlant(game, rng, p, hdef); hit++; }
     }
-    if (hit) pushLog(game, `🌋 Quake damage centred near ${ep.x},${ep.y}.`, 'bad');
+    if (hit) pushLog(game, `Quake damage centred near ${ep.x},${ep.y}.`, 'bad', HAZARDS.quake.icon);
     return;
   }
   const targets = eligibleTargets(game, hdef);
@@ -581,13 +584,13 @@ function damagePlant(game, rng, p, hdef) {
     if (p.id === 'nuclear') return meltdown(game, p);
     const i = game.plants.findIndex((q) => q.uid === p.uid);
     if (i >= 0) game.plants.splice(i, 1);
-    pushLog(game, `${def.emoji} ${def.name} was destroyed. The site is clear, but you must rebuild.`, 'bad');
+    pushLog(game, `${def.name} was destroyed. The site is clear, but you must rebuild.`, 'bad', def.icon);
   } else {
     p.status = 'damaged';
     p.repair = Math.round((5 + dmg * 0.3) * [1, 0.7, 0.5][game.upgrades.crew || 0]);
     const cost = Math.max(1, Math.round(def.capex * 0.02 * game.sevMult));
     game.money -= cost;
-    pushLog(game, `${def.emoji} ${def.name} damaged — crew dispatched ($${money(cost)}).`, 'bad');
+    pushLog(game, `${def.name} damaged — crew dispatched ($${money(cost)}).`, 'bad', def.icon);
   }
 }
 
@@ -597,7 +600,7 @@ function meltdown(game, p) {
   game.map[p.y][p.x] = T.mountain;           // permanent exclusion zone
   game.money -= 60;
   game.satisfaction = clamp(game.satisfaction - 22, 0, 100);
-  pushLog(game, '☢️ MELTDOWN! The reactor core is lost and the site is a permanent exclusion zone.', 'bad');
+  pushLog(game, 'MELTDOWN! The reactor core is lost and the site is a permanent exclusion zone.', 'bad', 'plant:nuclear');
 }
 
 function stepDamageAndRepair(game, rng, hm) {
@@ -607,7 +610,7 @@ function stepDamageAndRepair(game, rng, hm) {
     if (p.repair <= 0) {
       p.status = 'ok';
       p.hp = 100;
-      pushLog(game, `${PLANTS[p.id].emoji} ${PLANTS[p.id].name} is repaired and back to full output.`, 'good');
+      pushLog(game, `${PLANTS[p.id].name} is repaired and back to full output.`, 'good', PLANTS[p.id].icon);
     }
   }
   if (hm && hm.targets && hm.targets.length && game.tick % 12 === 0) {
@@ -627,13 +630,16 @@ function stepCalendar(game, rng) {
     game.popGrowth *= 1.10;
     game.sevMult = 1 + 0.14 * (cal.year - 1);
     game.rateMult = 1 + 0.30 * (cal.year - 1);
-    pushLog(game, `📈 Year ${cal.year} begins. Demand is climbing and the weather is turning meaner.`, 'warn');
+    pushLog(game, `Year ${cal.year} begins. Demand is climbing and the weather is turning meaner.`, 'warn', 'mark:town');
   }
 
   if (game.tick >= game.nextCityTick && game.cities.length < 6) {
     const spot = findCitySpot(game);
     if (spot) {
-      const name = rng.pick(['Copperfield', 'Fernbrook', 'Stonegate', 'Larkspur', 'Bramblewick', 'Dunmoor']);
+      // never reuse a name already on the map: two "Fernbrook" labels read as a bug
+      const taken = new Set(game.cities.map((c) => c.name));
+      const fresh = NEW_TOWN_NAMES.filter((n) => !taken.has(n));
+      const name = fresh.length ? rng.pick(fresh) : `Town ${game.cities.length + 1}`;
       game.map[spot.y][spot.x] = T.town;
       game.cities.push({
         x: spot.x, y: spot.y, name,
@@ -641,7 +647,7 @@ function stepCalendar(game, rng) {
         delivered: 0, served: 0,
       });
       game.nextCityTick = game.tick + TICKS_PER_DAY * (30 + rng.int(0, 22));
-      pushLog(game, `🏘️ ${name} has joined the grid — demand rises for good.`, 'warn');
+      pushLog(game, `${name} has joined the grid — demand rises for good.`, 'warn', 'mark:town');
     } else {
       game.nextCityTick = game.tick + TICKS_PER_DAY * 12;
     }
@@ -680,7 +686,7 @@ export function money(k) {
 }
 
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
-function pushLog(game, text, kind = 'info') { game.log.push({ tick: game.tick, text, kind }); }
+function pushLog(game, text, kind = 'info', icon = null) { game.log.push({ tick: game.tick, text, kind, icon }); }
 function trimLog(game) { if (game.log.length > 80) game.log.splice(0, game.log.length - 80); }
 
 function endGame(game, title, detail) {
@@ -693,7 +699,7 @@ function endGame(game, title, detail) {
     peak: Math.round(game.peakMW),
     satisfaction: Math.round(game.satisfaction),
   };
-  pushLog(game, `💥 ${title}: ${detail}`, 'bad');
+  pushLog(game, `${title}: ${detail}`, 'bad');
 }
 
 // ---- save / load -------------------------------------------------------------

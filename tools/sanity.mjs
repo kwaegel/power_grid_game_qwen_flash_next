@@ -270,6 +270,18 @@ it('a careful fleet survives far longer than doing nothing', () => {
   assert.ok(active.days > DAYS_PER_YEAR, 'a careful player did not survive a year');
 });
 
+it('no two towns on a map ever share a name', () => {
+  // duplicate labels on the board read as a rendering bug, so a town that joins
+  // later has to take a name the map is not already using
+  for (let seed = 0; seed < 6; seed++) {
+    const g = createGame(seed * 977 + 3);
+    while (!g.over && g.tick < TICKS_PER_DAY * 4000) tick(g);
+    const names = g.cities.map((c) => c.name);
+    assert.ok(names.length >= 4, `seed ${seed}: only ${names.length} towns connected`);
+    assert.equal(new Set(names).size, names.length, `seed ${seed}: ${names.join(', ')}`);
+  }
+});
+
 function runIdle(seed) {
   const g = createGame(seed);
   while (!g.over && g.tick < TICKS_PER_DAY * 4000) tick(g);
