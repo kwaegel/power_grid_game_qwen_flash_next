@@ -218,10 +218,12 @@ current code (~130 s per run). What it actually does:
   it can shut the plant down, a battery can be forced to *Charge*, `Escape` closes the
   card, and selling a plant removes it and pays salvage.
 - Keyboard: `Space` pauses (tick frozen), a number key resumes.
-- Plays **~160 in-game days / 161 days into year 3** with 31 mouse-driven builds and 8
-  upgrades bought through the panel, then checks all four seasons occurred, that ≥2
-  disasters struck after warning, that damage happened and crews repaired it, that new
-  towns connected, and that goodwill stayed above 55 under careful play.
+- Plays a long careful run to the two-year gate — across three consecutive runs that
+  meant **120–161 in-game days, into year 3, with 21–31 mouse-driven builds and 8
+  upgrades** bought through the panel — then checks all four seasons occurred, that ≥2
+  disasters struck after warning, that damage happened and crews repaired it, that all
+  six towns eventually connected, and that goodwill stayed above 55 (it reached 100).
+  Each run uses a random seed, so the exact figures vary; the assertions are floors.
 - Layout: at 1440×900 and at 1120×720, nothing runs off screen, nothing collapses, tiles
   are ≥26 px, the map is ≥34 % of the viewport height, and no visible element has
   `scrollWidth > clientWidth` (text overflow). Canvas pixel sampling shows 166 distinct
@@ -233,9 +235,10 @@ current code (~130 s per run). What it actually does:
   parses as a Gridling save, **Delete saved run** clears the slot (title then offers only
   *New run* / *How to play*), a fresh run really is fresh, importing the file restores the
   exported run, and pasting the JSON works too.
-- A deliberately careless run loses in 28–52 days, the game-over screen shows a score
-  that matches the run state, the best-score table is written, and reloading a finished
-  save reports *game over* rather than resuming a live run.
+- A deliberately careless run loses in **28–62 days** (random seed each run), the
+  game-over screen shows a score that matches the run state, the best-score table is
+  written, and reloading a finished save reports *game over* rather than resuming a live
+  run.
 - Zero page errors and zero console errors across the whole session.
 
 Screenshots are written to `tools/e2e/shots/` (git-ignored) together with

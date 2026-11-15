@@ -84,8 +84,8 @@ against the capital that any of it takes out of your reserve fund.
 
 ## Saving
 
-The game autosaves every few seconds into `localStorage`; the title screen offers
-**Continue** after a reload. The ☰ menu can also **Save now**, **Export save file**
+The game autosaves into `localStorage` about every 12 seconds of play; the title screen
+offers **Continue** after a reload. The ☰ menu can also **Save now**, **Export save file**
 (writes a `.gridling` JSON file), **Import save file** (a file picker, or paste the
 JSON), and show **Best scores**. Best scores live in `localStorage` as a top-10 list.
 
@@ -94,17 +94,28 @@ JSON), and show **Best scores**. Best scores live in `localStorage` as a top-10 
 No dependencies, no bundler, no build.
 
 ```
-index.html          markup
-styles.css          all styling
-server.mjs          tiny static server (the one command above)
-src/main.js         loop, input, panels, coach marks
-src/render.js       canvas drawing: terrain, plants, weather, chart
-src/storage.js      autosave, best scores, export/import
-src/sim/            the simulation (no DOM): engine, plants, hazards, world, rng
-tools/balance.mjs   headless balance harness: node tools/balance.mjs 12
-tools/e2e/play.mjs  Chromium play-test driver (needs playwright-core, see tools/e2e)
+index.html             markup
+styles.css             all styling
+server.mjs             tiny static server (the one command above)
+src/main.js            loop, input, panels, coach marks
+src/render.js          canvas drawing: terrain, plants, weather, chart
+src/storage.js         autosave, best scores, export/import
+src/sim/               the simulation (no DOM): engine, plants, hazards, world, rng
+tools/sanity.mjs       20 simulation invariant checks
+tools/balance.mjs      headless balance harness: node tools/balance.mjs 12
+tools/e2e/play.mjs     Chromium play-test driver (needs playwright-core, see tools/e2e)
 ```
 
-`tools/balance.mjs` runs scripted players (idle / greedy / steady / careful) against
-identical seeds and reports how long each survives — that is how the difficulty curve
-was tuned. `tools/e2e/play.mjs` drives the real game in a real browser.
+```bash
+node tools/sanity.mjs                       # physics, seasons, save determinism
+node tools/balance.mjs 12                   # scripted players on 12 seeds
+cd tools/e2e && npm install && node play.mjs   # drive the real game in a real browser
+```
+
+`tools/sanity.mjs` asserts the rules the design rests on, in about a second and with no
+browser. `tools/balance.mjs` runs scripted players (idle / greedy / steady / careful)
+against identical seeds and reports how long each survives — that is how the difficulty
+curve was tuned. `tools/e2e/play.mjs` clicks the real UI in real Chromium, watches the
+console, and checks layout at two window sizes; screenshots and a `results.json` from
+each run land in `tools/e2e/shots/` (git-ignored). `playwright-core` is the only
+dependency anywhere, it lives only under `tools/e2e/`, and the game itself has none.
