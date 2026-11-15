@@ -99,7 +99,7 @@ All hazards are survivable with good play; the balance sweep (2.2) is the eviden
 
 ### 1.6 Difficulty ramp
 
-At each new year (`src/sim/engine.js:627-629`): population ×1.10 compounding, hazard
+At each new year (`src/sim/engine.js:630-632`): population ×1.10 compounding, hazard
 severity `1 + 0.14 × (year − 1)`, hazard frequency `1 + 0.30 × (year − 1)`, and new towns
 connect until there are six. Demand growth is compounding while the player's capital
 growth is roughly linear, so a run is a race against an exponential and *must* end —
@@ -155,7 +155,7 @@ Three layers. Everything below was run against the current committed code.
 
 ### 2.1 Simulation invariants — `node tools/sanity.mjs`
 
-20 checks, no browser, ~1 s. These assert the rules the design rests on, so a tuning
+21 checks, no browser, ~1 s. These assert the rules the design rests on, so a tuning
 change that breaks a rule fails here rather than in someone's run:
 
 start-of-run state (spring, supply already meeting demand, no day-one blackout) ·
@@ -171,7 +171,7 @@ has a warning, a duration and advice text · hazards arrive, cause damage and ge
 repaired · an idle run always ends · running out of money ends the run at the published
 overdraft · score and delivered energy only ever grow · year-one demand stays inside
 what the opening fleet plus a bit can serve · a careful fleet outlasts doing nothing by
-more than 2×.
+more than 2× · no two towns on a board ever share a name (checked over six full runs).
 
 Two of these caught real bugs during development, both worth keeping in mind:
 the solar test failed because `daylight()` hit exactly 0 at `hour === 6`, and the
@@ -185,16 +185,26 @@ survived:
 
 | policy | min | median | max |
 |---|---|---|---|
-| idle (build nothing) | 9 | 82 | 109 |
-| greedy (cheapest plant first, no storage, no upgrades) | 12 | 112 | 120 |
-| steady (build on a fixed cadence, some storage) | 234 | 261 | 297 |
-| careful (hazards watched, batteries charged on warning, upgrades bought) | 354 | 413 | 447 |
+| idle (build nothing) | 50 | 84 | 108 |
+| greedy (cheapest plant first, no storage, no upgrades) | 53 | 110 | 119 |
+| steady (build on a fixed cadence, some storage) | 44 | 259 | 297 |
+| careful (hazards watched, batteries charged on warning, turbines shut before windstorms, upgrades bought) | 54 | 413 | 448 |
 
-At 60 days/year that is ≈6.9 years for careful play and ≈4.4 for steady — i.e. a
-careful player lasts well past the opening minutes, and both idle and greedy die, the
-idle one usually at the first winter. Every policy ends at "Customers revolted"; none
-went invincible. The harness also replays a serialised run and reports
-`save round-trip replay identical: true`.
+(These are exactly what `node tools/balance.mjs 12` prints in its summary lines, so a
+reader can reproduce them.) At 60 days/year that is ≈6.9 years for careful play and
+≈4.3 for steady — a careful player lasts well past the opening minutes, while idle and
+greedy both die, the idle one usually at the first winter. Every policy ends; one
+careful seed ended `Bankrupt` rather than `Customers revolted`, so both lose paths fire
+in normal play. None went invincible. The harness also replays a serialised run and
+reports `save round-trip replay identical: true`.
+
+The min columns are a feature, not noise: the seed that kills a careful bot at 54 days
+is a run where three disasters land in the first winter with no capital to answer them.
+That is the same reason `hazardCooldown` was widened from 30 ticks to **ten days**
+(`src/sim/engine.js:80`) — before the change, seed 1000 had a plant fire warning on
+**day 3**, which destroyed the starter coal station and ended a run that had done
+nothing wrong. A fixed opening grace is the cheapest fix: the first hazard can now warn
+between day 10 and day 22 across 30 seeds (median 13).
 
 Caveat: these are scripted bots, not humans. They bound the difficulty from below (a
 bot that reacts optimally to warnings survived 6.9 years), so a human having read the
@@ -203,13 +213,17 @@ README should land somewhere in the 3–7 year band. I have no human play-test d
 ### 2.3 Browser play-test — `cd tools/e2e && node play.mjs`
 
 Real Chromium (Chrome for Testing 149 via `playwright-core`), driving the real
-`index.html` with `page.mouse.click` and real key presses — **57/57 checks pass** on the
-current code (~130 s per run). What it actually does:
+`index.html` with `page.mouse.click` and real key presses — **71/71 checks pass** on the
+current code (~145 s per run). What it actually does:
 
 - Loads the page, asserts the stylesheet is applied and no page/console errors occur.
+- Asserts the **first screen is not blank**: the map is drawn behind the title card
+  (157 distinct colour buckets), and the chart, outlook strip and plant list are all
+  visible, sized and non-empty; the backdrop is labelled `Demo world · …` and is
+  asserted **never to write a save** (`localStorage` stays empty at that point).
 - Starts a run, asserts the coach marks appear and can be dismissed.
 - Asserts the real-time loop advances on its own (~2 ticks/s at 1×) and the canvas is
-  sized to the layout (16 tiles at 64 px, map 1088 px wide).
+  sized to the layout (16 columns at 67 px, map 1072 px wide).
 - **Builds by clicking** exactly as a player does: palette card, then map tile — hydro on
   a river, solar, wind, battery. Then asserts the fleet grew.
 - Refusal paths: unaffordable plants are dimmed in the panel; a build with no money is
@@ -218,65 +232,93 @@ current code (~130 s per run). What it actually does:
   it can shut the plant down, a battery can be forced to *Charge*, `Escape` closes the
   card, and selling a plant removes it and pays salvage.
 - Keyboard: `Space` pauses (tick frozen), a number key resumes.
-- Plays a long careful run to the two-year gate — across three consecutive runs that
-  meant **120–161 in-game days, into year 3, with 21–31 mouse-driven builds and 8
+- Plays a long careful run to the two-year gate — across four consecutive runs that
+  meant **120–164 in-game days, into year 3, with 8–31 mouse-driven builds and 2+
   upgrades** bought through the panel — then checks all four seasons occurred, that ≥2
   disasters struck after warning, that damage happened and crews repaired it, that all
-  six towns eventually connected, and that goodwill stayed above 55 (it reached 100).
-  Each run uses a random seed, so the exact figures vary; the assertions are floors.
-- Layout: at 1440×900 and at 1120×720, nothing runs off screen, nothing collapses, tiles
-  are ≥26 px, the map is ≥34 % of the viewport height, and no visible element has
-  `scrollWidth > clientWidth` (text overflow). Canvas pixel sampling shows 166 distinct
-  colour buckets — the map is actually drawing varied content, not a blank rectangle.
-- Save/reload/continue: saves, reloads, title offers **Continue**, the resumed run has
-  the same plants/score and the clock continues from the same tick, and the loaded save
-  keeps simulating.
-- Export/import: a real download lands (`gridling-year3.gridling`, ~21 KB), the file
+  six towns eventually connected **each under a different name**, and that goodwill
+  stayed above 55 (it reached 100). Each run uses a random seed, so the exact figures
+  vary; the assertions are floors.
+- Layout: at 1440×900 and at 1120×720, nothing runs off screen, nothing collapses, cells
+  are ≥26 px on both axes, the map is ≥34 % of the viewport height, the outlook strip
+  stays inside its bar, and no visible element has `scrollWidth > clientWidth` (text
+  overflow). Canvas pixel sampling shows 166–188 distinct colour buckets — the map is
+  drawing varied content, not a blank rectangle.
+- Save/reload/continue: **the periodic autosave is asserted to fire by itself** (a run
+  plays for 14 s and the slot refills without any Save press), then saving, reloading,
+  **Continue**, and the resumed run has the same plants/score and continues from the same
+  tick, and the loaded save keeps simulating.
+- Export/import: a real download lands (`gridling-year3.gridling`, 20–23 KB), the file
   parses as a Gridling save, **Delete saved run** clears the slot (title then offers only
   *New run* / *How to play*), a fresh run really is fresh, importing the file restores the
   exported run, and pasting the JSON works too.
-- A deliberately careless run loses in **28–62 days** (random seed each run), the
-  game-over screen shows a score that matches the run state, the best-score table is
-  written, and reloading a finished save reports *game over* rather than resuming a live
-  run.
-- Zero page errors and zero console errors across the whole session.
+- A deliberately careless run loses (random seed each run; observed 15–108 days, which
+  matches the headless idle band), the game-over screen shows a score that matches the
+  run state, the best-score table is written, and reloading a finished save reports
+  *game over* rather than resuming a live run.
+- **Determinism, end to end.** The driver takes the careless run's seed out of the
+  best-score table and replays it straight through the engine inside the same page, then
+  asserts the same length and the same death. Latest run: seed `4144749968` → browser
+  `75 days, Customers revolted`, replay `75 days, Customers revolted`. The simulation is
+  the same deterministic machine whether a mouse or a script drives it, which is what
+  makes the headless balance harness trustworthy at all.
+- Zero page errors and zero console errors across the whole session. One console
+  *warning* is emitted by the driver's own `getImageData` probes, not by the game.
 
 Screenshots are written to `tools/e2e/shots/` (git-ignored) together with
 `results.json`, so a run can be re-inspected.
 
 ### 2.4 The documented command
 
-`node server.mjs` was smoke-tested on its own: it serves `index.html`, `styles.css` and
-`src/sim/engine.js` with HTTP 200, refuses a `../etc/passwd` traversal with 404, and a
-real page load against it starts a run with no console errors (canvas 1088×583, Cash
-labelled `Cash (k$)`). The e2e driver runs its own equivalent inline server, so this was
-verified separately.
+`node server.mjs` was smoke-tested on its own: `GET /`, `/styles.css` and
+`/src/sim/engine.js` all return 200, `/../etc/passwd` and its percent-encoded form
+return 404, and a real page load against it boots with **no console or page errors**, the
+demo world drawn (cells 67 px, map 1072×531) and Cash labelled `Cash (k$)`. The e2e
+driver runs its own equivalent inline server, so this was verified separately.
 
 ---
 
-## 3. The image-viewing limitation, and what replaced it
+## 3. Looking at the game: what was actually possible
 
-Preflight check 7 recorded that **direct image viewing is not available** in this
-environment: screenshots are written and recognised as valid PNGs, but the vision role
-reports it does not accept image input, so I never saw a single pixel of the game.
-
-That is a real limitation for a "cute, soft look" brief, and it must be read as such:
-**the aesthetics were never verified by eye.** What was verified instead, per the
-preflight disclosure:
+Preflight check 7 recorded that **direct image viewing was not available**: the
+screenshot was written and recognised as a valid PNG, but the vision role said it did not
+accept image input. That was true at the time, and it shaped the whole first pass of
+verification, which was programmatic:
 
 - canvas pixel sampling → colour distribution is rich and the canvas is not blank;
-- computed styles and DOM geometry → the stylesheet applied, the grid layout is a
-  `display:grid` main area, panel/canvas/chart boxes are inside the viewport at two
-  window sizes, tiles are large enough to read;
+- computed styles and DOM geometry → the stylesheet applied, the layout is a
+  `display:grid` main area, panel/canvas/chart boxes sit inside the viewport at two
+  window sizes, cells are large enough to read;
 - overflow detection → no visible element's content exceeds its box;
-- console and page-error listeners throughout.
+- console and page-error listeners throughout;
+- `tools/e2e/glyphcheck.mjs` → every icon spec paints real opaque pixels rather than the
+  `?` placeholder or an empty span.
 
-So "layout and readability are correct" is verified; "the game looks cute and pleasant"
-is an *unverified design intention* — the palette, corner radii and plant art are
-plausible but unaudited. Screenshots exist in `tools/e2e/shots/` for a human to look at.
+**Later in the build that limit lifted.** `read <screenshot>.png?q=…` started returning
+genuine descriptions, and `tools/e2e/vision.py` (the same model, asked directly over the
+endpoint's `image_url` support) does the same from the command line. So screenshots
+*were* reviewed, and looking found things no amount of pixel sampling would have:
 
-Bug this caused, worth recording because it is exactly the failure mode: the stylesheet
-`<link>` tag was silently clobbered when a favicon link was inserted next to it. The game
+| found by looking | symptom | fix |
+|---|---|---|
+| truncated town name | `Pebble…` at the map edge read as a rendering bug | labels are never abbreviated now; a smaller font size is the fallback instead (`drawTownLabels`, `src/render.js`) |
+| two labels colliding | the 18:00 peak marker printed over the next day's pill, leaving a stray `0` on the axis | the peak is marked on the demand curve itself, and axis pills refuse to overlap (`pillText` takes a `taken` list) |
+| duplicate town label | two tiles both said `Fernbrook` | `NEW_TOWN_NAMES` in `world.js`; joins skip names already on the map, covered by an invariant |
+| four empty boxes on the first screen | map, chart, outlook and plant list all blank behind the title card | a demo world ticks behind the title card (`startPreview`, `src/main.js`), labelled `Demo world · …` in the top bar, never saved |
+| faint outlook glyphs | pale grey weather glyphs on a pale grey chip | chips carry the weather **word** next to the glyph, and the cloud/flake/drop/gust strokes were darkened |
+| alarm before a run existed | the backdrop could raise a hazard banner | the banner is suppressed while `ui.preview` is set |
+
+The map also stopped floating: cells are stretched to fill the card (`layout()` returns a
+non-square `ts`/`ch`), so there is no bare band beside the grid that reads as clipped
+land. Plant and town art stays square inside its cell (`cellBox`).
+
+What is still true: **this is one model's reading of a screenshot, not a human's eye.**
+It caught label collisions and blank panels; whether the game reads as "cute and cosy" is
+a judgement I cannot close, and there is no human play-test. Screenshots from the latest
+run are in `tools/e2e/shots/` for a person to look at.
+
+One failure mode from the programmatic-only phase is worth keeping: the stylesheet
+`<link>` was silently clobbered when a favicon link was inserted next to it. The game
 still *worked* — DOM logic, canvas drawing, saves, all fine — and only pixel sampling
 plus a computed-style check caught that the canvas was 300×150 and nothing was styled.
 A "no errors in console" check alone would have passed it.
@@ -309,14 +351,26 @@ Recorded per the instruction to decide and write it down rather than ask.
 8. **Save versioning, not migration.** Old-version saves are rejected with a clear
    message. There is no shipped save that needs migrating; inventing a migration chain
    for an unreleased format is dead weight.
+9. **The title screen has a live demo world behind it.** Nothing in the brief asked for
+   it; it exists because reviewing the first screenshot showed four empty boxes (map,
+   chart, outlook, plant list) behind the title card, which reads as broken. It is a
+   fixed-seed decorative run that is never saved, is labelled `Demo world · …` in the top
+   bar, cannot be clicked, and restarts after 40 days. The cost is that the top bar shows
+   a mid-run state while the card offers "New run" — visible in the screenshots, and a
+   deliberate trade against a blank first screen.
+10. **Disaster mitigation is played by the bots.** The `careful` policy in
+    `tools/balance.mjs` shuts turbines before windstorms and restores them after, so the
+    shutdown-halves-damage rule (1.5) is measured end-to-end rather than asserted only by
+    its unit test.
 
 ---
 
 ## 5. Known problems
 
-1. **The visuals have never been seen by a human or by me.** See section 3. Everything
-   about them is unverified except layout geometry and colour richness. This is the
-   biggest gap in the project.
+1. **No human has looked at it.** Screenshots *were* read back by a vision model, which
+   caught real defects (section 3), but that is not the same as a person judging whether
+   the game reads as cosy and inviting, and it is certainly not play-test feedback on
+   feel. The aesthetics remain the biggest unverified area.
 2. **Headless Chromium renders at ~60 fps but ticks far faster than a human plays.** The
    driver calls `setTps(8–16)` to get enough simulation in a reasonable wall-clock time,
    which means the *long-run* play-test deliberately runs at a speed no human would use.

@@ -1,4 +1,4 @@
-# ⚡ Gridling
+# Gridling
 
 A small, cosy power-grid management game that runs entirely in your browser — no
 backend, no build step, no network access needed once the files are served.
@@ -71,21 +71,29 @@ card, `?` help.
 
 | Plant | Cost | Rated | Fuel | Tradeoff |
 |---|---|---|---|---|
-| 🔆 Solar Farm | $40 | 12 MW | free | zero at night, weak in winter/storms |
-| 🌀 Wind Turbine | $65 | 10 MW | free | +28% on hills, lulls for days, fragile in storms |
-| 💧 Run-of-River | $95 | 14 MW | free | dispatchable and free, but only 4 river sites, seasonal |
-| 🏭 Coal Station | $130 | 30 MW | $3.2 | firm all hours, slow ramp, smog caps goodwill, max 3 |
-| 🔥 Gas Peaker | $55 | 12 MW | $7.5 | instant and cheap to build, ruinous fuel bill |
-| ⚛️ Nuclear Plant | $320 | 60 MW | $0.5 | enormous and cheap to run, needs cooling water, meltdown risk |
-| 🔋 Battery Bank | $70 | 10 MW / 60 MWh | — | buys firmness without fuel, 90% round-trip, max 8 |
+| Solar Farm | $40 | 12 MW | free | zero at night, weak in winter/storms |
+| Wind Turbine | $65 | 10 MW | free | +28% on hills, lulls for days, fragile in storms |
+| Run-of-River | $95 | 14 MW | free | dispatchable and free, but only 4 river sites, seasonal |
+| Coal Station | $130 | 30 MW | $3.2 | firm all hours, slow ramp, smog caps goodwill, max 3 |
+| Gas Peaker | $55 | 12 MW | $7.5 | instant and cheap to build, ruinous fuel bill |
+| Nuclear Plant | $320 | 60 MW | $0.5 | enormous and cheap to run, needs cooling water, meltdown risk, max 2 |
+| Battery Bank | $70 | 10 MW / 60 MWh | — | buys firmness without fuel, 90% round-trip, max 8 |
 
 There is no single right answer: cheap-free-but-intermittent against firm-but-expensive,
 against the capital that any of it takes out of your reserve fund.
 
+Every icon in the game — the plant shapes on the map, the palette cards, the
+weather and disaster glyphs, the logo — is drawn with canvas code in
+`src/icons.js`. No emoji, no font glyphs, no image files, so nothing depends on a
+font the machine may not have.
+
 ## Saving
 
 The game autosaves into `localStorage` about every 12 seconds of play; the title screen
-offers **Continue** after a reload. The ☰ menu can also **Save now**, **Export save file**
+offers **Continue** after a reload. Behind that title card a fixed-seed **demo world**
+ticks over so the first screen shows a working grid — it is labelled `Demo world · …` in
+the top bar, it is not yours, it is never saved, and clicking it does nothing until you
+start a run. The menu button can also **Save now**, **Export save file**
 (writes a `.gridling` JSON file), **Import save file** (a file picker, or paste the
 JSON), and show **Best scores**. Best scores live in `localStorage` as a top-10 list.
 
@@ -98,18 +106,25 @@ index.html             markup
 styles.css             all styling
 server.mjs             tiny static server (the one command above)
 src/main.js            loop, input, panels, coach marks
+src/icons.js           every icon in the game, drawn as canvas vectors
 src/render.js          canvas drawing: terrain, plants, weather, chart
 src/storage.js         autosave, best scores, export/import
 src/sim/               the simulation (no DOM): engine, plants, hazards, world, rng
-tools/sanity.mjs       20 simulation invariant checks
+tools/sanity.mjs       21 simulation invariant checks
 tools/balance.mjs      headless balance harness: node tools/balance.mjs 12
 tools/e2e/play.mjs     Chromium play-test driver (needs playwright-core, see tools/e2e)
+tools/e2e/glyphcheck.mjs  asserts every icon spec the sim can name actually paints
+tools/e2e/bootcheck.mjs   fast boot + console-error check, before the slow play-through
+tools/e2e/crop.mjs     crop + zoom a screenshot region
+tools/e2e/vision.py    screenshot review against a vision model endpoint
 ```
 
 ```bash
 node tools/sanity.mjs                       # physics, seasons, save determinism
 node tools/balance.mjs 12                   # scripted players on 12 seeds
 cd tools/e2e && npm install && node play.mjs   # drive the real game in a real browser
+cd tools/e2e && node bootcheck.mjs          # ~6 s: does it boot clean?
+cd tools/e2e && node glyphcheck.mjs         # 42 icon specs paint real pixels
 ```
 
 `tools/sanity.mjs` asserts the rules the design rests on, in about a second and with no
