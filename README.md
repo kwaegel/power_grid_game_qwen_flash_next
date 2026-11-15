@@ -15,7 +15,8 @@ One command, from this folder:
 node server.mjs
 ```
 
-then open <http://localhost:8000>. Pass a port to change it: `node server.mjs 1234`.
+then open <http://localhost:8000>. Pass a port to change it: `node server.mjs 1234`. If
+the port is already taken, the server says so and tells you to pick another.
 
 Any other static file server works too (the game is plain ES modules — `index.html`,
 `styles.css`, `src/`). If you open `index.html` straight from disk with `file://`,
@@ -82,6 +83,14 @@ card, `?` help.
 There is no single right answer: cheap-free-but-intermittent against firm-but-expensive,
 against the capital that any of it takes out of your reserve fund.
 
+**Where things can go.** Grass and field tiles take everything except run-of-river:
+solar, wind, coal, gas, nuclear and batteries. Hills take only wind (+28% output) and
+gas. Forest takes only batteries. Run-of-river must sit on a river tile, four at most.
+Nuclear sits on grass or field but needs a river or lake on an adjacent tile for cooling
+water, two at most; coal is capped at three. Lakes, mountains, towns and cracked fault
+ground are unbuildable — and next to fault ground, earthquakes do more damage. A palette
+card reading `· 2/4` means two built, four allowed.
+
 Every icon in the game — the plant shapes on the map, the palette cards, the
 weather and disaster glyphs, the logo — is drawn with canvas code in
 `src/icons.js`. No emoji, no font glyphs, no image files, so nothing depends on a
@@ -110,12 +119,14 @@ src/icons.js           every icon in the game, drawn as canvas vectors
 src/render.js          canvas drawing: terrain, plants, weather, chart
 src/storage.js         autosave, best scores, export/import
 src/sim/               the simulation (no DOM): engine, plants, hazards, world, rng
-tools/sanity.mjs       21 simulation invariant checks
+tools/sanity.mjs       23 simulation invariant checks
 tools/balance.mjs      headless balance harness: node tools/balance.mjs 12
 tools/e2e/play.mjs     Chromium play-test driver (needs playwright-core, see tools/e2e)
-tools/e2e/glyphcheck.mjs  asserts every icon spec the sim can name actually paints
+tools/e2e/glyphcheck.mjs  icon gate: coverage, silhouette confusion, terrain legibility
 tools/e2e/bootcheck.mjs   fast boot + console-error check, before the slow play-through
+tools/e2e/servecheck.mjs  loads the page from the real server.mjs (the documented command)
 tools/e2e/crop.mjs     crop + zoom a screenshot region
+tools/e2e/spritesheet.mjs  contact sheet: every plant on every legal terrain, all glyphs
 tools/e2e/vision.py    screenshot review against a vision model endpoint
 ```
 
@@ -124,7 +135,8 @@ node tools/sanity.mjs                       # physics, seasons, save determinism
 node tools/balance.mjs 12                   # scripted players on 12 seeds
 cd tools/e2e && npm install && node play.mjs   # drive the real game in a real browser
 cd tools/e2e && node bootcheck.mjs          # ~6 s: does it boot clean?
-cd tools/e2e && node glyphcheck.mjs         # 42 icon specs paint real pixels
+node server.mjs 8123 & node tools/e2e/servecheck.mjs 8123   # the shipped command, served
+cd tools/e2e && node glyphcheck.mjs         # 35 icons paint; none confusable; legible on terrain
 ```
 
 `tools/sanity.mjs` asserts the rules the design rests on, in about a second and with no

@@ -155,7 +155,7 @@ Three layers. Everything below was run against the current committed code.
 
 ### 2.1 Simulation invariants — `node tools/sanity.mjs`
 
-21 checks, no browser, ~1 s. These assert the rules the design rests on, so a tuning
+23 checks, no browser, ~1 s. These assert the rules the design rests on, so a tuning
 change that breaks a rule fails here rather than in someone's run:
 
 start-of-run state (spring, supply already meeting demand, no day-one blackout) ·
@@ -172,6 +172,13 @@ repaired · an idle run always ends · running out of money ends the run at the 
 overdraft · score and delivered energy only ever grow · year-one demand stays inside
 what the opening fleet plus a bit can serve · a careful fleet outlasts doing nothing by
 more than 2× · no two towns on a board ever share a name (checked over six full runs).
+
+plus: the **plant table printed in the README is parsed and checked against the
+simulation** — cost, rated MW, storage MWh and fuel price for all seven plants. That
+table had already drifted once, and it is the only place a player reads numbers before
+spending money, so it is now a contract rather than prose. Verified in both directions:
+passing on the real README, and failing with `README prices Nuclear Plant at $999,
+engine says $320` when the price was deliberately falsified.
 
 Two of these caught real bugs during development, both worth keeping in mind:
 the solar test failed because `daylight()` hit exactly 0 at `hour === 6`, and the
@@ -213,12 +220,12 @@ README should land somewhere in the 3–7 year band. I have no human play-test d
 ### 2.3 Browser play-test — `cd tools/e2e && node play.mjs`
 
 Real Chromium (Chrome for Testing 149 via `playwright-core`), driving the real
-`index.html` with `page.mouse.click` and real key presses — **71/71 checks pass** on the
-current code (~145 s per run). What it actually does:
+`index.html` with `page.mouse.click` and real key presses — **74/74 checks pass** on the
+current code (~150 s per run). What it actually does:
 
 - Loads the page, asserts the stylesheet is applied and no page/console errors occur.
 - Asserts the **first screen is not blank**: the map is drawn behind the title card
-  (157 distinct colour buckets), and the chart, outlook strip and plant list are all
+  (164 distinct colour buckets), and the chart, outlook strip and plant list are all
   visible, sized and non-empty; the backdrop is labelled `Demo world · …` and is
   asserted **never to write a save** (`localStorage` stays empty at that point).
 - Starts a run, asserts the coach marks appear and can be dismissed.
@@ -242,8 +249,23 @@ current code (~145 s per run). What it actually does:
 - Layout: at 1440×900 and at 1120×720, nothing runs off screen, nothing collapses, cells
   are ≥26 px on both axes, the map is ≥34 % of the viewport height, the outlook strip
   stays inside its bar, and no visible element has `scrollWidth > clientWidth` (text
-  overflow). Canvas pixel sampling shows 166–188 distinct colour buckets — the map is
-  drawing varied content, not a blank rectangle.
+  overflow). Canvas pixel sampling shows 164 distinct buckets at the title screen and
+  198 mid-run — the map is drawing varied content, not a blank rectangle.
+- The glanceable readouts themselves: the supply bar's text and width both equal
+  `round(served/demand)`; the weather stat is a *drawn* glyph plus a word, not a text
+  glyph; the outlook strip paints a glyph **and** a weather word for each day ahead and
+  stays inside its bar; the top bar reads `Cash (k$)` and the number under it equals
+  `state.money` in thousands — asserted never to be abbreviated to "m"; and the chart's
+  y-axis is fitted to the demand the player must meet, not to spare capacity (see 3).
+- The hazard alarm banner is **forced on** for one probe (`g.hazard = { id:'storm',
+  phase:'warn' }` held for two frames, then restored) and asserted to be visible, styled
+  `warn`, to paint a glyph with real ink (106 opaque pixels), and to lead with a
+  capitalised hazard name plus a warn-phase countdown. It used to be guarded by "is a
+  hazard up at this instant?", so the check ran in some runs and not others and the suite
+  total wobbled between 73 and 74 — harness nondeterminism, not a product one, but
+  exactly the kind that hides a real regression. The text assertion is structural, not
+  word-pinned: hazard id `storm` is *displayed* as "Windstorm", so matching the id would
+  have been a bug in the test.
 - Save/reload/continue: **the periodic autosave is asserted to fire by itself** (a run
   plays for 14 s and the slot refills without any Save press), then saving, reloading,
   **Continue**, and the resumed run has the same plants/score and continues from the same
@@ -258,8 +280,8 @@ current code (~145 s per run). What it actually does:
   *game over* rather than resuming a live run.
 - **Determinism, end to end.** The driver takes the careless run's seed out of the
   best-score table and replays it straight through the engine inside the same page, then
-  asserts the same length and the same death. Latest run: seed `4144749968` → browser
-  `75 days, Customers revolted`, replay `75 days, Customers revolted`. The simulation is
+  asserts the same length and the same death. Latest run: seed `3530268720` → browser
+  `43 days, Customers revolted`, replay `43 days, Customers revolted`. The simulation is
   the same deterministic machine whether a mouse or a script drives it, which is what
   makes the headless balance harness trustworthy at all.
 - Zero page errors and zero console errors across the whole session. One console
@@ -270,11 +292,20 @@ Screenshots are written to `tools/e2e/shots/` (git-ignored) together with
 
 ### 2.4 The documented command
 
-`node server.mjs` was smoke-tested on its own: `GET /`, `/styles.css` and
-`/src/sim/engine.js` all return 200, `/../etc/passwd` and its percent-encoded form
-return 404, and a real page load against it boots with **no console or page errors**, the
-demo world drawn (cells 67 px, map 1072×531) and Cash labelled `Cash (k$)`. The e2e
-driver runs its own equivalent inline server, so this was verified separately.
+Verified through `tools/e2e/servecheck.mjs <port>`, which loads the page from the
+**real `server.mjs`** rather than the inline server the play-test driver starts, so the
+command in the README is the thing actually exercised. Against `node server.mjs` with no
+arguments: `/`, `/styles.css`, `/src/sim/engine.js` and `/src/icons.js` return 200;
+`/../etc/passwd` and its percent-encoded form return 404; the page boots with **no page
+or console errors**, canvas 1072×531, cells 67 px, the demo world drawn, the top bar
+reading `Cash (k$)` over `$582`. (`/favicon.ico` is 404 — there is no favicon link in
+`index.html`, only the inline SVG icon used by the UI; the browser's automatic request is
+harmless and produces no console error.)
+
+One real defect surfaced here that no in-app test could see: with the documented port
+busy, `node server.mjs` died with an unhandled `EADDRINUSE` stack trace. Since the whole
+game is one command, `server.mjs` now catches `EADDRINUSE` and `EACCES` and prints the
+fix (`node server.mjs 1234`), exit code 1. Verified by running it against a busy port.
 
 ---
 
@@ -307,15 +338,68 @@ endpoint's `image_url` support) does the same from the command line. So screensh
 | four empty boxes on the first screen | map, chart, outlook and plant list all blank behind the title card | a demo world ticks behind the title card (`startPreview`, `src/main.js`), labelled `Demo world · …` in the top bar, never saved |
 | faint outlook glyphs | pale grey weather glyphs on a pale grey chip | chips carry the weather **word** next to the glyph, and the cloud/flake/drop/gust strokes were darkened |
 | alarm before a run existed | the backdrop could raise a hazard banner | the banner is suppressed while `ui.preview` is set |
+| money unit contradicted its own label | the stat said `Cash` and the value printed `$4.68m` while everything in the sim is k$ | `money()` no longer switches units; the stat reads `Cash (k$)`, and the driver asserts the number equals `state.money` |
+| chart y-axis crushed the demand line | the axis was scaled to available capacity, so a fleet with a lot of surplus (measured: 343 MW available against 26 MW of demand) pushed the axis to ~360 MW and left the demand line in the bottom tenth of the plot | the axis is fitted to demand (`niceStep(peakDemand)`), surplus is clamped flat at the top, and `drawChart` returns `{axisTop, surplusOverTop}` so the driver asserts it on live data — latest run `axisTop 197` for `peakDemand 171` with `peakPotential 364` |
+| weather word "Heatwave" on a forecast chip | a 5-day forecast saying "Heatwave" two days out reads as a disaster, not hot weather | the regime is `Hot`; `heatwave` remains a separate disaster with a warning phase |
 
 The map also stopped floating: cells are stretched to fill the card (`layout()` returns a
 non-square `ts`/`ch`), so there is no bare band beside the grid that reads as clipped
 land. Plant and town art stays square inside its cell (`cellBox`).
 
-What is still true: **this is one model's reading of a screenshot, not a human's eye.**
-It caught label collisions and blank panels; whether the game reads as "cute and cosy" is
-a judgement I cannot close, and there is no human play-test. Screenshots from the latest
-run are in `tools/e2e/shots/` for a person to look at.
+### 3.1 A second pass over the art, and where the metric overruled the eye
+
+After the above fixes the art was re-reviewed against a purpose-built contact sheet
+(`tools/e2e/spritesheet.mjs`): every plant on every terrain it may legally occupy, at the
+real 64 px tile size, plus all 18 weather and disaster chips — the only way to see the
+icons side by side instead of scattered through the UI.
+
+`glyphcheck.mjs` grew two gates alongside coverage, because "each icon paints pixels" says
+nothing about icons being *distinguishable*:
+
+- **confusion** — silhouette IoU > 0.8 **and** colour gap < 90 for glyphs the player reads
+  side by side (forecast chips together; the seven build-palette icons together). 12 pairs
+  compared: the closest silhouette is `solar vs battery` at shape 0.841 but colour gap 261,
+  and the closest colours are `cloudy vs overcast` at gap 31 but shape 0.735 — a deliberate
+  cloud family that the shape half of the rule correctly lets through.
+- **legibility** — each plant against each terrain it can stand on: the glyph must repaint
+  at least 8 % of the tile. 16 combinations, worst `plant:hydro on river` 0.213,
+  `battery on forest` 0.242.
+
+What that round changed, and what it did not:
+
+- **Acted on (all three reproduced by hand, not just by the model):** the nuclear glyph sat
+  on grey mountain tiles like the mountains themselves; wind read as a white stick; the
+  battery was green on forest. Nuclear gained a containment dome plus two prongs, wind
+  gained a tilted three-blade rotor on a tapered mast, battery became a slate casing with a
+  charge band.
+- **Acted on, second attempt needed:** hydro. First it was a thin arc-and-spokes outline
+  that read as an empty tile; the first fix (a pale grey wedge) still read as "a faint
+  placeholder". It is now a dam wall spanning the whole tile with a white spillway and a
+  dark intake ring, and the review calls it a dam. Two rounds of the same complaint were
+  the signal that the outline approach was wrong, not the rendering.
+- **Rejected on measurement:** the reviewer called `Deep Frost` and `Ice Storm`
+  "near-identical and confusable" *after* they had been differentiated; the gate says
+  shape 0.322 and colour gap 203 for `snow vs coldsnap` and 0.317/100 for `ice vs snow`.
+  Measured directly, coal-vs-gas is `shape=0.709 colourgap=369`: under the 0.8 silhouette
+  threshold and four times the colour tolerance, so distinct on both axes. To make sure
+  that is the gate working and not the gate being blind, I temporarily replaced the gas
+  glyph with a literal copy of coal's: the gate then reports `CONFUSE shape=1.000
+  colourgap=0` and exits 1. The icon file was restored from a copy and re-verified clean
+  (0 problems, exit 0). So those reviewer flags are plausibility judgements about small
+  marks, not measurements of these glyphs, and the chips carry their word in-game anyway —
+  so no further art change, and the disagreement is recorded here rather than dropped.
+- **Reverted for the same reason:** I added a hatched strip along the top of the chart to
+  say "capacity continues above the scale". The review read it as shortage markers — wrong
+  signal, invented ornament. Gone; the legend prints the exact available MW and the area
+  simply flattens at the top. A `↑` on the legend number was also considered and dropped:
+  every glyph in this game is drawn in code, and a Unicode arrow would be a font glyph.
+
+The honest summary: **one model's reading of a screenshot, not a human's eye.** It caught
+label collisions, blank panels, a squashed chart and an unreadable dam — all real, all
+reproducible. It also flagged pairs my own gate measures as far apart. Whether the game
+reads as "cute and cosy" is a judgement I cannot close, and there is no human play-test.
+Screenshots from the latest run are in `tools/e2e/shots/` for a person to look at.
+
 
 One failure mode from the programmatic-only phase is worth keeping: the stylesheet
 `<link>` was silently clobbered when a favicon link was inserted next to it. The game

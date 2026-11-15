@@ -531,8 +531,6 @@ check('no text overflows its container', over1.length === 0, over1.join(' | '));
       chipWords: [...document.querySelectorAll('#forecast-chips .chip .cw')].map((e) => e.textContent.trim()),
       outlookSpill: Math.round(document.getElementById('forecast-chips').getBoundingClientRect().right
         - document.getElementById('forecast').getBoundingClientRect().right),
-      hazardBanner: !document.getElementById('hazardbanner').hidden,
-      hazardCanvas: !!document.querySelector('#hazardbanner canvas'),
       cashText: document.getElementById('v-money').textContent,
       cashState: +g.money.toFixed(2),
       statLabels: [...document.querySelectorAll('#topbar .stat .k')].map((k) => k.textContent.trim()),
