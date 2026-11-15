@@ -533,7 +533,16 @@ check('no text overflows its container', over1.length === 0, over1.join(' | '));
         - document.getElementById('forecast').getBoundingClientRect().right),
       hazardBanner: !document.getElementById('hazardbanner').hidden,
       hazardCanvas: !!document.querySelector('#hazardbanner canvas'),
+      cashText: document.getElementById('v-money').textContent,
+      cashState: +g.money.toFixed(2),
       statLabels: [...document.querySelectorAll('#topbar .stat .k')].map((k) => k.textContent.trim()),
+      // measured in the page, asserted below: the driver is Node, so anything reading
+      // window.__gridling has to be sampled here or it throws in the harness
+      chartAxis: (window.__gridling.ui.chart || {}).axisTop ?? null,
+      chartSurplus: (window.__gridling.ui.chart || {}).surplusOverTop ?? null,
+      peakDemand: window.__gridling.ui.hist.reduce((m, p) => Math.max(m, p.demand), 0),
+      peakPotential: window.__gridling.ui.hist.reduce((m, p) => Math.max(m, p.potential), 0),
+      histLen: window.__gridling.ui.hist.length,
     };
   });
   check('supply bar tracks served/demand', read.shown === `${read.computed}%` && /%$/.test(read.width),
@@ -544,10 +553,60 @@ check('no text overflows its container', over1.length === 0, over1.join(' | '));
       && read.chipWords.length === read.forecastChips && read.chipWords.every((w) => /^[A-Z]/.test(w)),
     `${read.chipCanvases}/${read.chips} painted, words: ${read.chipWords.join(', ')}`);
   check('outlook strip stays inside its bar', read.outlookSpill <= 0, `spill ${read.outlookSpill}px`);
-  if (read.hazardBanner) {
-    check('hazard banner paints its glyph', read.hazardCanvas);
-  }
+  // The banner only appears when a hazard happens to be up at this instant, which made
+  // this check run in some runs and not others (73 vs 74 total). So the hazard is forced
+  // on for the probe and restored after: the assertion always runs, on a known state.
+  const banner = await G(() => {
+    const g = window.__gridling.state();
+    const prev = g.hazard;
+    g.hazard = { id: 'storm', phase: 'warn', ticksLeft: 240 };
+    return new Promise((done) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const b = document.getElementById('hazardbanner');
+        const out = {
+          shown: !b.hidden,
+          cls: b.className,
+          canvas: !!b.querySelector('canvas'),
+          painted: (() => {
+            const c = b.querySelector('canvas');
+            if (!c) return 0;
+            const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+            let ink = 0;
+            for (let i = 3; i < d.length; i += 4) if (d[i] > 8) ink++;
+            return ink;
+          })(),
+          text: b.textContent.trim(),
+        };
+        g.hazard = prev;
+        done(out);
+      }));
+    });
+  });
+  // Structural, not word-pinned: the forced hazard `storm` is *displayed* as
+  // "Windstorm", so matching the literal id here would be wrong, and matching the
+  // display name would only pin wording. What has to hold is that the banner shows a
+  // capitalised hazard name, the countdown for the warn phase, and real glyph ink.
+  check('hazard banner paints its glyph and names the hazard',
+    banner.shown && banner.cls === 'warn' && banner.canvas && banner.painted > 30
+    && /^[A-Z][\w ]+ — expected in ~\w/.test(banner.text),
+    JSON.stringify({ shown: banner.shown, cls: banner.cls, painted: banner.painted, text: banner.text.slice(0, 70) }));
   check('top bar labels the money unit', read.statLabels.some((t) => /k\$/i.test(t)), read.statLabels.join(' / '));
+  // The top bar states the unit as k$, so the number beside it must never silently
+  // switch unit: an earlier build printed "$4.68m" under that very label.
+  check('cash readout matches state and never abbreviates to millions',
+    read.cashText === `${read.cashState < 0 ? '-' : ''}$${Math.round(Math.abs(read.cashState)).toLocaleString('en-US')}`
+      && !/[a-zA-Z]/.test(read.cashText),
+    `${read.cashText} (state ${read.cashState})`);
+
+  // The chart must stay readable for a fleet with lots of spare capacity: an earlier
+  // build scaled the y-axis to available MW, so 343 MW of surplus against 26 MW of
+  // demand crushed the demand line into the bottom tenth of the plot.
+  check('chart axis scales to demand, not to spare capacity',
+    read.histLen > 1
+      && read.chartAxis >= read.peakDemand && read.chartAxis <= read.peakDemand * 1.3
+      && (read.peakPotential <= read.chartAxis * 1.05 || read.chartSurplus > 0),
+    JSON.stringify({ axisTop: read.chartAxis, peakDemand: Math.round(read.peakDemand),
+      peakPotential: Math.round(read.peakPotential), surplusBarsOverTop: read.chartSurplus }));
 }
 
 // narrower window

@@ -7,13 +7,15 @@
 // breaks a rule fails here rather than in someone's run.
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   createGame, tick, buildPlant, fleetSummary, demandMW, serialize, deserialize,
   availableCapacity, solarFactor, damageRoll, PLANTS, HAZARDS, linkCapacity,
-  START_MONEY, OVERDRAFT,
+  START_MONEY, OVERDRAFT, UPGRADES,
 } from '../src/sim/engine.js';
 import { TICKS_PER_DAY, TICKS_PER_YEAR, DAYS_PER_YEAR, calendarOf, seasonOf } from '../src/sim/world.js';
 import { makeRng } from '../src/sim/rng.js';
+import { WEATHER } from '../src/sim/hazards.js';
 
 let passed = 0, failed = 0;
 function it(name, fn) {
@@ -333,5 +335,45 @@ function tryUpgrade(g, id) {
   g.upgrades[id] = lvl + 1;
   g.money -= 60;
 }
+
+it('no two names a player reads are the same word', () => {
+  // The forecast strip and the alarm chip sit side by side, so a disaster called
+  // "Heatwave" next to a weather condition called "Heatwave" is unreadable. A
+  // screenshot review found exactly this; it is now a rule rather than a review note.
+  const seen = new Map();
+  for (const [k, group] of [['weather', WEATHER], ['disaster', HAZARDS], ['plant', PLANTS], ['upgrade', UPGRADES]])
+    for (const [id, def] of Object.entries(group)) {
+      const key = def.name.toLowerCase();
+      assert.ok(!seen.has(key), `"${def.name}" names both ${seen.get(key)} and ${k} ${id}`);
+      seen.set(key, `${k} ${id}`);
+    }
+});
+
+it('the README plant table agrees with the simulation', () => {
+  // That table is the only place a player reads numbers before spending money, and it
+  // had already drifted from the engine once, so parse it instead of restating it.
+  const md = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  const rows = [...md.matchAll(/^\|\s*([\w -]+?)\s*\|\s*\$(\d+)\s*\|\s*(\d+) MW( \/ (\d+) MWh)?\s*\|\s*([^|]+?)\s*\|/gm)];
+  const seen = new Set();
+  for (const [, label, cost, cap, , energy, fuel] of rows) {
+    const def = Object.values(PLANTS).find((p) => p.name.toLowerCase().startsWith(label.toLowerCase()));
+    assert.ok(def, `README row "${label}" matches no plant in the simulation`);
+    seen.add(def.name);
+    assert.equal(+cost, def.capex, `README prices ${def.name} at $${cost}, engine says $${def.capex}`);
+    assert.equal(+cap, def.cap, `README rates ${def.name} at ${cap} MW, engine says ${def.cap} MW`);
+    if (def.kind === 'storage') {
+      assert.ok(energy, `README rates ${def.name} at ${cap} MW with no MWh figure`);
+      assert.equal(+energy, def.energy, `README stores ${energy} MWh in ${def.name}, engine says ${def.energy}`);
+    } else {
+      assert.ok(!energy, `README gives ${def.name} an MWh figure; only storage stores`);
+    }
+    const f = fuel.trim();
+    if (f === '—') assert.equal(def.kind, 'storage', `${def.name} lists no fuel but is not storage`);
+    else if (f === 'free') assert.equal(def.fuel, 0, `${def.name} is listed as free fuel but the engine charges $${def.fuel}/MWh`);
+    else assert.equal(f, `$${def.fuel}`, `README fuel for ${def.name} is "${f}", engine says $${def.fuel}`);
+  }
+  assert.equal(rows.length, Object.keys(PLANTS).length, `README table has ${rows.length} plant rows, engine has ${Object.keys(PLANTS).length} plants`);
+  assert.equal(seen.size, Object.keys(PLANTS).length, 'README table names the same plant twice');
+});
 
 console.log(`\n${passed} invariant checks passed${failed ? `, ${failed} FAILED` : ''}`);
