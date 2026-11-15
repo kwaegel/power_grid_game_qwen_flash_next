@@ -107,56 +107,97 @@ export function drawPlantIcon(ctx, plantId, px, py, s, kind, anim, p, game) {
       break;
     }
     case 'wind': {
-      ctx.strokeStyle = '#8d97a8';
-      ctx.lineWidth = Math.max(2, u * 0.045);
+      // Deliberately dark-lined: a wind turbine is the plant you most want on a hill
+      // (+28% output), and hills are pale teal, so white-on-pale made it the hardest
+      // plant to see on the tile where it matters most (measured: it repainted only
+      // 6% of a hill tile, the worst legibility of any plant/terrain pair).
+      ctx.strokeStyle = '#4f5a6b';
+      ctx.lineWidth = Math.max(2.2, u * 0.055);
       ctx.beginPath();
       ctx.moveTo(cx, cy + u * 0.26);
       ctx.lineTo(cx, cy - u * 0.18);
       ctx.stroke();
       const spin = on && anim != null ? anim * (0.8 + windSpin(game)) : 0.4;
-      ctx.fillStyle = '#f2f5fa';
-      ctx.strokeStyle = '#9fb0c6';
-      ctx.lineWidth = Math.max(1, u * 0.012);
       for (let i = 0; i < 3; i++) {
         const a = spin + (i * Math.PI * 2) / 3;
         ctx.save();
         ctx.translate(cx, cy - u * 0.18);
         ctx.rotate(a);
+        ctx.fillStyle = '#e8eef6';
+        ctx.strokeStyle = '#4f5a6b';
+        ctx.lineWidth = Math.max(1.4, u * 0.022);
         ctx.beginPath();
-        ctx.ellipse(0, -u * 0.15, u * 0.045, u * 0.16, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.ellipse(0, -u * 0.15, u * 0.05, u * 0.16, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
         ctx.restore();
       }
-      ctx.fillStyle = '#6d7787';
+      ctx.fillStyle = '#37404e';
       ctx.beginPath();
-      ctx.arc(cx, cy - u * 0.18, u * 0.05, 0, Math.PI * 2);
+      ctx.arc(cx, cy - u * 0.18, u * 0.06, 0, Math.PI * 2);
       ctx.fill();
       break;
     }
     case 'hydro': {
-      ctx.fillStyle = '#b9c4d6';
-      rr(ctx, cx - u * 0.26, cy - u * 0.1, u * 0.5, u * 0.34, u * 0.09);
-      ctx.fill();
-      ctx.fillStyle = '#79b6e4';
-      rr(ctx, cx - u * 0.2, cy - u * 0.02, u * 0.4, u * 0.16, u * 0.06);
-      ctx.fill();
-      ctx.strokeStyle = '#7d8798';
-      ctx.lineWidth = Math.max(1.6, u * 0.03);
+      // A dam wall spanning the whole tile, white water pouring over it, and a dark
+      // intake ring on the wall. Two earlier attempts failed the visual review: first
+      // a thin outline that read as an empty tile, then a pale grey wedge that read as
+      // a placeholder. Spanning the tile is what says "this river is blocked", and the
+      // dark outline keeps it off the tile's own blue.
+      const wallTop = cy - u * 0.16, wallBot = cy + u * 0.14;
+      const left = cx - u * 0.44, right = cx + u * 0.44;
+      ctx.fillStyle = '#7c8797';
       ctx.beginPath();
-      ctx.arc(cx, cy - u * 0.16, u * 0.13, 0, Math.PI * 2);
+      ctx.moveTo(left, wallBot);
+      ctx.lineTo(left + u * 0.06, wallTop);
+      ctx.lineTo(right - u * 0.06, wallTop);
+      ctx.lineTo(right, wallBot);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#37404e';
+      ctx.lineWidth = Math.max(1.6, u * 0.035);
       ctx.stroke();
-      const a0 = on && anim != null ? anim * 1.4 : 0;
-      for (let i = 0; i < 4; i++) {
+
+      // white spillway: water leaving over the crest and down to the tile edge
+      ctx.fillStyle = '#f2f9ff';
+      ctx.beginPath();
+      ctx.moveTo(cx - u * 0.11, wallTop);
+      ctx.quadraticCurveTo(cx - u * 0.16, cy, cx - u * 0.19, cy + u * 0.42);
+      ctx.lineTo(cx + u * 0.19, cy + u * 0.42);
+      ctx.quadraticCurveTo(cx + u * 0.16, cy, cx + u * 0.11, wallTop);
+      ctx.closePath();
+      ctx.fill();
+
+      // gate notches on the crest
+      ctx.fillStyle = '#37404e';
+      for (const dx of [-0.3, 0.3]) {
+        rr(ctx, cx + dx * u - u * 0.03, wallTop - u * 0.05, u * 0.06, u * 0.1, 2);
+        ctx.fill();
+      }
+
+      // intake ring on the wall, so the shape is not just a slab
+      ctx.strokeStyle = '#2f3742';
+      ctx.lineWidth = Math.max(1.6, u * 0.032);
+      ctx.beginPath();
+      ctx.arc(cx, cy - u * 0.04, u * 0.1, 0, Math.PI * 2);
+      ctx.stroke();
+      const a0 = on && anim != null ? anim * 1.4 : 0.4;
+      for (let i = 0; i < 3; i++) {
         ctx.beginPath();
-        ctx.moveTo(cx, cy - u * 0.16);
-        ctx.lineTo(cx + Math.cos(a0 + i * Math.PI / 2) * u * 0.12, cy - u * 0.16 + Math.sin(a0 + i * Math.PI / 2) * u * 0.12);
+        ctx.moveTo(cx, cy - u * 0.04);
+        ctx.lineTo(cx + Math.cos(a0 + i * (Math.PI * 2) / 3) * u * 0.085,
+          cy - u * 0.04 + Math.sin(a0 + i * (Math.PI * 2) / 3) * u * 0.085);
         ctx.stroke();
       }
       break;
     }
     case 'battery': {
       const ch = p ? p.charge / PLANTS.battery.energy : 0.5;
-      ctx.fillStyle = '#8fbf9c';
-      rr(ctx, cx - u * 0.26, cy - u * 0.2, u * 0.52, u * 0.42, u * 0.1);
+      // Slate casing, not green: batteries are the one plant allowed on forest tiles,
+      // and a green shell on a green tile made it nearly disappear (a reviewer read
+      // the forest cell as "unfinished").
+      ctx.fillStyle = '#5c6675';
+      rr(ctx, cx - u * 0.28, cy - u * 0.22, u * 0.56, u * 0.46, u * 0.1);
       ctx.fill();
       ctx.fillStyle = '#f4f7f2';
       rr(ctx, cx - u * 0.2, cy - u * 0.14, u * 0.4, u * 0.3, u * 0.07);
@@ -165,54 +206,88 @@ export function drawPlantIcon(ctx, plantId, px, py, s, kind, anim, p, game) {
       const hh = u * 0.3 * Math.max(0.05, ch);
       rr(ctx, cx - u * 0.2, cy - u * 0.14 + (u * 0.3 - hh), u * 0.4, hh, u * 0.06);
       ctx.fill();
-      ctx.fillStyle = '#8fbf9c';
-      rr(ctx, cx + u * 0.26, cy - u * 0.06, u * 0.06, u * 0.14, 2);
+      ctx.fillStyle = '#5c6675';
+      rr(ctx, cx + u * 0.28, cy - u * 0.07, u * 0.07, u * 0.16, 2);
       ctx.fill();
       break;
     }
     case 'coal': {
-      ctx.fillStyle = '#a49cb0';
-      rr(ctx, cx - u * 0.3, cy - u * 0.06, u * 0.6, u * 0.32, u * 0.08);
+      // Deliberately the darkest plant, with two thin stacks and a coal pile at the
+      // door: the earlier mauve-grey block with two stubs sat at the same value as
+      // pale ground and blurred into the nuclear station's two cooling towers.
+      ctx.fillStyle = '#5b5566';
+      rr(ctx, cx - u * 0.3, cy - u * 0.04, u * 0.6, u * 0.3, u * 0.07);
       ctx.fill();
-      ctx.fillStyle = '#847b91';
+      ctx.fillStyle = '#3f3a49';                       // two tall thin stacks
       for (let i = 0; i < 2; i++) {
-        rr(ctx, cx - u * 0.2 + i * u * 0.28, cy - u * 0.3, u * 0.11, u * 0.28, u * 0.04);
+        rr(ctx, cx - u * 0.21 + i * u * 0.3, cy - u * 0.36, u * 0.09, u * 0.36, u * 0.03);
         ctx.fill();
       }
-      ctx.fillStyle = '#efeae2';
-      rr(ctx, cx - u * 0.22, cy + 0.04 * u, u * 0.12, u * 0.14, u * 0.03);
+      ctx.fillStyle = '#efeae2';                       // band, keeps the block readable
+      rr(ctx, cx - u * 0.24, cy + u * 0.06, u * 0.2, u * 0.11, u * 0.03);
       ctx.fill();
-      if (on && p && p.out > 0.01 && anim != null) puff(ctx, cx - u * 0.14, cy - u * 0.32, anim, u);
+      ctx.fillStyle = '#2f2b36';                       // coal pile at the door
+      ctx.beginPath();
+      ctx.moveTo(cx + u * 0.04, cy + u * 0.26);
+      ctx.lineTo(cx + u * 0.13, cy + u * 0.13);
+      ctx.lineTo(cx + u * 0.24, cy + u * 0.26);
+      ctx.closePath();
+      ctx.fill();
+      if (on && p && p.out > 0.01 && anim != null) {
+        puff(ctx, cx - u * 0.165, cy - u * 0.38, anim, u);
+        puff(ctx, cx + u * 0.135, cy - u * 0.38, anim + 0.5, u * 0.8);
+      }
       break;
     }
     case 'gas': {
-      ctx.fillStyle = '#d9b79c';
-      rr(ctx, cx - u * 0.24, cy - u * 0.14, u * 0.48, u * 0.4, u * 0.1);
+      // A gas turbine hall: rounded roof, one exhaust, and a flame drawn even when
+      // the unit is off, so the type never reads as a bare box (battery is a box too).
+      ctx.fillStyle = '#e0a878';
+      ctx.beginPath();
+      ctx.moveTo(cx - u * 0.28, cy + u * 0.24);
+      ctx.lineTo(cx - u * 0.28, cy - u * 0.06);
+      ctx.quadraticCurveTo(cx, cy - u * 0.26, cx + u * 0.28, cy - u * 0.06);
+      ctx.lineTo(cx + u * 0.28, cy + u * 0.24);
+      ctx.closePath();
       ctx.fill();
-      ctx.fillStyle = '#b9927a';
-      rr(ctx, cx - u * 0.14, cy - u * 0.26, u * 0.28, u * 0.14, u * 0.05);
+      ctx.fillStyle = '#b9764a';                       // exhaust stack
+      rr(ctx, cx + u * 0.13, cy - u * 0.34, u * 0.1, u * 0.3, u * 0.03);
       ctx.fill();
-      ctx.fillStyle = '#efeae2';
-      rr(ctx, cx - u * 0.16, cy + u * 0.04, u * 0.32, u * 0.1, u * 0.04);
+      ctx.fillStyle = '#f5e6d2';                       // door band
+      rr(ctx, cx - u * 0.2, cy + u * 0.08, u * 0.28, u * 0.1, u * 0.04);
       ctx.fill();
-      if (on && p && p.out > 0.01 && anim != null) flameFx(ctx, cx, cy - u * 0.3, anim, u * 0.55);
+      flameFx(ctx, cx + u * 0.18, cy - u * 0.36, anim != null ? anim : 0, u * (on ? 0.62 : 0.4));
       break;
     }
     case 'nuclear': {
+      // Two hyperboloid cooling towers, not a triangle. The previous silhouette
+      // reused roundedTri - the exact shape every mountain tile is drawn with - so
+      // at map scale a nuclear plant read as extra terrain rather than a plant.
+      const top = cy - u * 0.34, bot = cy + u * 0.14, mid = (top + bot) / 2;
+      const tower = (tx, w) => {
+        ctx.beginPath();
+        ctx.moveTo(tx - w * 0.5, bot);
+        ctx.quadraticCurveTo(tx - w * 0.26, mid, tx - w * 0.4, top);
+        ctx.lineTo(tx + w * 0.4, top);
+        ctx.quadraticCurveTo(tx + w * 0.26, mid, tx + w * 0.5, bot);
+        ctx.closePath();
+        ctx.fill();
+      };
       ctx.fillStyle = '#b7c6da';
-      roundedTri(ctx, cx, cy - u * 0.3, u * 0.26, u * 0.5);
-      ctx.fillStyle = '#dfe7f0';
-      rr(ctx, cx - u * 0.3, cy + u * 0.06, u * 0.6, u * 0.2, u * 0.06);
+      tower(cx - u * 0.17, u * 0.34);
+      ctx.fillStyle = '#a8bad0';
+      tower(cx + u * 0.21, u * 0.26);
+      ctx.fillStyle = '#8fa6c2';
+      rr(ctx, cx - u * 0.37, top - u * 0.05, u * 0.42, u * 0.05, u * 0.02);
       ctx.fill();
-      if (anim != null) {
-        ctx.strokeStyle = 'rgba(120,150,200,0.85)';
-        ctx.lineWidth = Math.max(1.4, u * 0.025);
-        const a0 = on ? anim * 1.2 : 0;
-        for (let i = 0; i < 2; i++) {
-          ctx.beginPath();
-          ctx.ellipse(cx, cy - u * 0.1, u * 0.17, u * 0.07, a0 + i * Math.PI / 2, 0, Math.PI * 2);
-          ctx.stroke();
-        }
+      rr(ctx, cx + u * 0.07, top - u * 0.04, u * 0.32, u * 0.04, u * 0.02);
+      ctx.fill();
+      ctx.fillStyle = '#dfe7f0';          // turbine hall along the base
+      rr(ctx, cx - u * 0.34, cy + u * 0.14, u * 0.68, u * 0.14, u * 0.05);
+      ctx.fill();
+      if (on && anim != null) {
+        puff(ctx, cx - u * 0.17, top - u * 0.06, anim, u);
+        puff(ctx, cx + u * 0.21, top - u * 0.05, anim + 0.4, u * 0.7);
       }
       break;
     }
@@ -328,20 +403,21 @@ function heatWaves(ctx, cx, cy, r) {
     ctx.stroke();
   }
 }
-
 function gust(ctx, cx, cy, r) {
-  ctx.strokeStyle = '#6f7c92';
-  ctx.lineWidth = Math.max(1.6, r * 0.2);
-  for (let i = -1; i <= 1; i++) {
-    const y = cy + i * r * 0.7;
+  // Two flowing strokes with hooked ends. The earlier version drew three straight
+  // horizontal lines, which at chip size reads as a hamburger menu, not wind.
+  ctx.strokeStyle = '#5f7c9a';
+  ctx.lineWidth = Math.max(1.6, r * 0.17);
+  ctx.lineCap = 'round';
+  for (const [k, w] of [[-0.5, 1], [0.42, 0.78]]) {
+    const y = cy + k * r;
     ctx.beginPath();
-    ctx.moveTo(cx - r * 1.15, y);
-    ctx.lineTo(cx + r * (i === 1 ? 0.9 : 0.55), y);
+    ctx.moveTo(cx - r * 1.05, y);
+    ctx.lineTo(cx + r * (0.45 * w), y);
+    ctx.arc(cx + r * (0.45 * w), y - r * 0.22 * w, r * 0.22 * w, Math.PI * 0.5, Math.PI * -0.45, true);
     ctx.stroke();
   }
-  ctx.beginPath();
-  ctx.arc(cx + r * 0.8, cy - r * 0.7, r * 0.32, Math.PI * 0.4, Math.PI * 1.7);
-  ctx.stroke();
+  ctx.lineCap = 'butt';
 }
 
 function leaf(ctx, cx, cy, r) {
@@ -475,9 +551,23 @@ const GLYPHS = {
   'weather:frost': (c, s) => { flake(c, 0, -s * 0.05, s * 0.28); flake(c, -s * 0.3, s * 0.26, s * 0.11); },
 
   // hazards
-  'hazard:storm': (c, s) => { cloud(c, 0, -s * 0.24, s * 0.21); bolt(c, 0, s * 0.2, s * 0.24); },
-  'hazard:ice': (c, s) => { flake(c, -s * 0.18, -s * 0.18, s * 0.2); flake(c, s * 0.22, s * 0.2, s * 0.22); },
-  'hazard:heatwave': (c, s) => { sun(c, 0, -s * 0.2, s * 0.2, false); heatWaves(c, 0, -s * 0.2, s * 0.3); },
+  // The Windstorm disaster must not look like the Storm weather condition, which it
+  // previously did (both drew cloud + bolt): the sheet review caught the duplicate.
+  'hazard:storm': (c, s) => { gust(c, -s * 0.06, -s * 0.08, s * 0.26); crack(c, s * 0.16, s * 0.24, s * 0.16); },
+  // Flakes *plus an iced transmission line*: the sheet review flagged that an Ice
+  // Storm drawn as two snowflakes differed from the Deep Frost condition only by how
+  // many flakes there were. The line is also what this hazard actually breaks.
+  'hazard:ice': (c, s) => {
+    c.strokeStyle = '#7d8798'; c.lineWidth = Math.max(1.2, s * 0.055);
+    c.beginPath(); c.moveTo(-s * 0.34, s * 0.3); c.lineTo(s * 0.34, s * 0.3); c.stroke();
+    c.fillStyle = '#cfe4f4';
+    for (const x of [-0.2, 0.06, 0.3]) { c.beginPath(); c.arc(x * s, s * 0.3, s * 0.055, 0, Math.PI * 2); c.fill(); }
+    flake(c, -s * 0.14, -s * 0.18, s * 0.2);
+    flake(c, s * 0.22, -s * 0.02, s * 0.16);
+  },
+  // Sun, shimmer and a rising arrow: plain Hot weather is just sun + shimmer, and
+  // what makes this a disaster is air-conditioning demand soaring.
+  'hazard:heatwave': (c, s) => { sun(c, -s * 0.16, -s * 0.2, s * 0.15, false); heatWaves(c, -s * 0.16, -s * 0.2, s * 0.26); trend(c, s * 0.19, s * 0.19, s * 0.2, false); },
   'hazard:drought': (c, s) => {
     sun(c, 0, -s * 0.26, s * 0.15, false);
     c.strokeStyle = '#c19a5b';

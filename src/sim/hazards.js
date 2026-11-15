@@ -18,7 +18,7 @@ export const WEATHER = {
   rain:     { name: 'Rain',       icon: 'weather:rain', solar: 0.22, wind: 1.1,  demand: 1.02 },
   storm:    { name: 'Storm',      icon: 'weather:storm', solar: 0.12, wind: 1.9,  demand: 1.12 },
   snow:     { name: 'Snow',       icon: 'weather:snow', solar: 0.20, wind: 1.0,  demand: 1.25 },
-  heat:     { name: 'Heatwave',   icon: 'weather:heat', solar: 1.0,  wind: 0.45, demand: 1.38 },
+  heat:     { name: 'Hot',        icon: 'weather:heat', solar: 1.0,  wind: 0.45, demand: 1.38 },
   frost:    { name: 'Deep Frost', icon: 'weather:frost', solar: 0.5,  wind: 0.8,  demand: 1.42 },
 };
 

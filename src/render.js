@@ -202,7 +202,10 @@ function jit(x, y, k = 0) {
   return n - Math.floor(n);
 }
 
-function drawDecoration(ctx, tt, px, py, ts, x, y, anim) {
+// Exported so the glyph-collision harness can paint a terrain tile exactly as the
+// map does; a plant icon that reads as a mountain tile is a real defect, and this is
+// the only way to check it without a human looking.
+export function drawDecoration(ctx, tt, px, py, ts, x, y, anim) {
   const s = ts;
   if (tt === T.forest) {
     for (let i = 0; i < 3; i++) {
@@ -492,9 +495,17 @@ export function drawChart(canvas, game, hist) {
   const plotH = Math.max(20, h - T - B);
   const yTop = T, yBot = T + plotH;
 
+  // The plot is scaled to the numbers the player has to meet - demand and what is
+  // actually served. Available capacity used to stretch the axis, so a fleet with a
+  // lot of surplus (measured: available 343 MW against demand 26 MW) pushed the axis
+  // to ~360 MW and crushed the demand line into the bottom tenth of the chart. The
+  // surplus area is now drawn clipped flat at the top edge, and its exact figure is
+  // printed in the legend row above the plot, where nothing is scaled.
   let max = 10;
-  for (const p of hist) max = Math.max(max, p.demand, p.served, p.potential);
-  max *= 1.12;
+  for (const p of hist) max = Math.max(max, p.demand, p.served);
+  max *= 1.15;
+  let surplusOverTop = 0;
+  for (const p of hist) if (p.potential > max) surplusOverTop++;
   const n = hist.length;
   const X = (i) => L + (i / (n - 1)) * plotW;
   const Y = (v) => yBot - (v / max) * plotH;
@@ -589,10 +600,14 @@ export function drawChart(canvas, game, hist) {
   }
 
   // --- available capacity, as a filled area -------------------------------
+  // Clamped to the top of the plot: with the axis scaled to demand, a big surplus
+  // would otherwise spill into the legend band. A hatch along the top edge was tried
+  // to say "more than fits here" and a review read it as shortage spikes, so the
+  // signal is the printed number instead, marked when it is above the scale.
   ctx.fillStyle = 'rgba(87,167,115,0.20)';
   ctx.beginPath();
   ctx.moveTo(X(0), Y(0));
-  for (let i = 0; i < n; i++) ctx.lineTo(X(i), Y(hist[i].potential));
+  for (let i = 0; i < n; i++) ctx.lineTo(X(i), Math.max(yTop, Y(hist[i].potential)));
   ctx.lineTo(X(n - 1), Y(0));
   ctx.closePath();
   ctx.fill();
@@ -664,7 +679,9 @@ export function drawChart(canvas, game, hist) {
     ctx.textAlign = 'left';
     ctx.fillText(`shortfall ${Math.round(last.demand - last.served)} MW`, L + 4, 16);
   }
-  ctx.textAlign = 'left';
+  // Returned so the play-test can assert the axis is scaled to the demand the player
+  // has to meet, not to whatever spare capacity happened to sit in the window.
+  return { axisTop: Math.round(max), surplusOverTop };
 }
 
 // A readable axis step: 5, 10, 20, 25, 50, 100 ...

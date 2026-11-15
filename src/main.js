@@ -117,7 +117,7 @@ function render() {
     ui.hoverOk = canBuild(g, ui.buildSel, ui.hover.x, ui.hover.y).ok;
   }
   drawWorld(g, ui.geo, ui);
-  drawChart(chartCanvas, g, ui.hist);
+  ui.chart = drawChart(chartCanvas, g, ui.hist);
   syncStats();
   if (ui.preview) el('hazardbanner').hidden = true;   // no alarms behind the title card
   else syncHazard();
@@ -510,6 +510,15 @@ function helpModal() {
     <ul><li>customer goodwill empties (long or deep blackouts), or</li><li>the bank goes more than $12k overdrawn.</li></ul>
     <h2>The plants</h2>
     <table><tr><th>Plant</th><th>Cost</th><th>Rated</th><th>Fuel</th><th>Notes</th></tr>${plantRows}</table>
+    <h2>Where things can go</h2>
+    <ul>
+      <li><b>Grass and fields</b> take everything but run-of-river: solar, wind, coal, gas, nuclear and batteries.</li>
+      <li><b>Hills</b> take only wind and gas, and <b>wind</b> makes 28% more power there. <b>Forest</b> takes only batteries.</li>
+      <li><b>Run-of-river</b> must sit on a river tile, four at most.</li>
+      <li><b>Nuclear</b> needs grass or field next to a river or lake for cooling water, two at most.</li>
+      <li>Lakes, mountains, towns and cracked <b>fault ground</b> cannot be built on. Next to fault ground, earthquakes hit harder.</li>
+      <li>A card reading <b>&middot; 2/4</b> means two of that type are built and four are allowed.</li>
+    </ul>
     <h2>Keyboard</h2>
     <p class="hint">Space = pause · 1/2/3 = speed · Esc = cancel build or close a card · ? = this help</p>
     <div class="acts"><button class="primary" data-a="close">Back</button></div>
@@ -673,9 +682,12 @@ function startPreview() {
   ui.speed = 0;
   closeDetail();
   // decorative builds so the backdrop shows a region that has actually been
-  // worked on, not just the two starter plants. Money is topped up purely to
-  // place them; this run is never saved and never becomes the player's.
-  g.money = 5000;
+  // worked on, not just the two starter plants. Cash is topped up to 900 purely to
+  // place them, which leaves the title screen showing a few hundred k$ - the band a
+  // real run holds at this stage (careful bot play peaks at 155-285 k$), so the
+  // palette's affordability colours agree with the number in the top bar. This run
+  // is never saved and never becomes the player's.
+  g.money = 900;
   for (const id of ['wind', 'solar', 'battery', 'wind', 'hydro']) {
     let done = false;
     for (let y = 1; y < MAP_ROWS - 1 && !done; y++)

@@ -679,10 +679,11 @@ export function seasonName(i) {
 
 // ---- misc --------------------------------------------------------------------
 
+// Money is k$ everywhere in the simulation, so every amount on screen is printed in
+// the same unit the labels state. An earlier version switched to "4.68m" past a
+// million, which contradicted the "Cash (k$)" stat sitting right above it.
 export function money(k) {
-  const v = Math.round(k);
-  if (Math.abs(v) >= 1000) return `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 2)}m`;
-  return v.toLocaleString('en-US');
+  return Math.round(k).toLocaleString('en-US');
 }
 
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
