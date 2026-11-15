@@ -10,16 +10,16 @@
 //   active   -> damage / modifiers applied over `duration` ticks
 
 export const WEATHER = {
-  clear:    { name: 'Clear',      emoji: '☀️', solar: 1.05, wind: 0.7,  demand: 1.00 },
-  cloudy:   { name: 'Cloudy',     emoji: '☁️', solar: 0.55, wind: 1.0,  demand: 0.98 },
-  overcast: { name: 'Overcast',   emoji: '🌥️', solar: 0.35, wind: 0.9,  demand: 0.99 },
-  windy:    { name: 'Windy',      emoji: '🌬️', solar: 0.75, wind: 1.55, demand: 1.05 },
-  calm:     { name: 'Calm',       emoji: '🍃', solar: 0.9,  wind: 0.15, demand: 1.00 },
-  rain:     { name: 'Rain',       emoji: '🌧️', solar: 0.22, wind: 1.1,  demand: 1.02 },
-  storm:    { name: 'Storm',      emoji: '⛈️', solar: 0.12, wind: 1.9,  demand: 1.12 },
-  snow:     { name: 'Snow',       emoji: '🌨️', solar: 0.20, wind: 1.0,  demand: 1.25 },
-  heat:     { name: 'Heatwave',   emoji: '🥵', solar: 1.0,  wind: 0.45, demand: 1.38 },
-  frost:    { name: 'Deep Frost', emoji: '🧊', solar: 0.5,  wind: 0.8,  demand: 1.42 },
+  clear:    { name: 'Clear',      icon: 'weather:clear', solar: 1.05, wind: 0.7,  demand: 1.00 },
+  cloudy:   { name: 'Cloudy',     icon: 'weather:cloudy', solar: 0.55, wind: 1.0,  demand: 0.98 },
+  overcast: { name: 'Overcast',   icon: 'weather:overcast', solar: 0.35, wind: 0.9,  demand: 0.99 },
+  windy:    { name: 'Windy',      icon: 'weather:windy', solar: 0.75, wind: 1.55, demand: 1.05 },
+  calm:     { name: 'Calm',       icon: 'weather:calm', solar: 0.9,  wind: 0.15, demand: 1.00 },
+  rain:     { name: 'Rain',       icon: 'weather:rain', solar: 0.22, wind: 1.1,  demand: 1.02 },
+  storm:    { name: 'Storm',      icon: 'weather:storm', solar: 0.12, wind: 1.9,  demand: 1.12 },
+  snow:     { name: 'Snow',       icon: 'weather:snow', solar: 0.20, wind: 1.0,  demand: 1.25 },
+  heat:     { name: 'Heatwave',   icon: 'weather:heat', solar: 1.0,  wind: 0.45, demand: 1.38 },
+  frost:    { name: 'Deep Frost', icon: 'weather:frost', solar: 0.5,  wind: 0.8,  demand: 1.42 },
 };
 
 // seasonal transition weights: [from][to] not needed; we sample candidates per season
@@ -45,7 +45,7 @@ export function weatherCandidates(season, month, from) {
 
 export const HAZARDS = {
   storm: {
-    id: 'storm', name: 'Windstorm', emoji: '⛈️',
+    id: 'storm', name: 'Windstorm', icon: 'hazard:storm',
     warn: 12, duration: 12, severity: 1,
     lineMod: 0.75, windMod: 0.55, solarMod: 0.2, demandMod: 1.1,
     targets: ['wind', 'solar'], repairCost: 0.35,
@@ -53,7 +53,7 @@ export const HAZARDS = {
     advice: 'Shut down exposed turbines to halve the damage, and bank energy now.',
   },
   ice: {
-    id: 'ice', name: 'Ice Storm', emoji: '🧊',
+    id: 'ice', name: 'Ice Storm', icon: 'hazard:ice',
     seasons: [0, 3], warn: 15, duration: 18, severity: 1.3,
     lineMod: 0.65, windMod: 0.2, solarMod: 0.35, demandMod: 1.35,
     targets: ['wind', 'hydro'], repairCost: 0.45,
@@ -61,7 +61,7 @@ export const HAZARDS = {
     advice: 'Charge every battery and bring firm plants online before it hits.',
   },
   heatwave: {
-    id: 'heatwave', name: 'Heatwave', emoji: '🥵',
+    id: 'heatwave', name: 'Heatwave', icon: 'hazard:heatwave',
     seasons: [2], warn: 15, duration: 24, severity: 1.2,
     lineMod: 0.85, solarMod: 1.05, demandMod: 1.5, hydroMod: 0.8,
     targets: ['transmission'], repairCost: 0.3,
@@ -69,7 +69,7 @@ export const HAZARDS = {
     advice: 'Cheap daytime energy is plentiful — pump it into storage for the evening.',
   },
   drought: {
-    id: 'drought', name: 'Drought', emoji: '🏜️',
+    id: 'drought', name: 'Drought', icon: 'hazard:drought',
     seasons: [1, 2, 3], warn: 24, duration: 60, severity: 0.8,
     hydroMod: 0.3, demandMod: 1.12,
     targets: [], repairCost: 0,
@@ -77,14 +77,14 @@ export const HAZARDS = {
     advice: 'Expect a long dry spell: spread the load across other plants.',
   },
   quake: {
-    id: 'quake', name: 'Earthquake', emoji: '🌋',
+    id: 'quake', name: 'Earthquake', icon: 'hazard:quake',
     warn: 6, duration: 6, severity: 1.6,
     targets: ['any'], damageNear: 2, repairCost: 0.6,
     text: 'Seismic activity detected along the fault line!',
     advice: 'Little warning. This is why you keep spare capacity and insurance money.',
   },
   linefault: {
-    id: 'linefault', name: 'Line Fault', emoji: '⚡',
+    id: 'linefault', name: 'Line Fault', icon: 'hazard:linefault',
     warn: 8, duration: 14, severity: 1,
     lineMod: 0.5,
     targets: ['transmission'], repairCost: 0.5,
@@ -92,14 +92,14 @@ export const HAZARDS = {
     advice: 'Your grid link will be throttled — pre-charge batteries to cover the cities.',
   },
   plantfire: {
-    id: 'plantfire', name: 'Plant Fire', emoji: '🔥',
+    id: 'plantfire', name: 'Plant Fire', icon: 'hazard:plantfire',
     warn: 4, duration: 20, severity: 1.4,
     targets: ['thermal'], repairCost: 0.55,
     text: 'A fire has broken out at one of your thermal stations.',
     advice: 'Fire crews will repair it; the cost is unavoidable, the blackout is not.',
   },
   coldsnap: {
-    id: 'coldsnap', name: 'Cold Snap', emoji: '❄️',
+    id: 'coldsnap', name: 'Cold Snap', icon: 'hazard:coldsnap',
     seasons: [0, 1, 11], warn: 18, duration: 20, severity: 1.1,
     demandMod: 1.45, windMod: 1.15, solarMod: 0.6,
     targets: [], repairCost: 0,

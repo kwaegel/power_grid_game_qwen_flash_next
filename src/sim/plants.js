@@ -16,7 +16,7 @@
 
 export const PLANTS = {
   solar: {
-    id: 'solar', name: 'Solar Farm', emoji: '🔆',
+    id: 'solar', name: 'Solar Farm', icon: 'plant:solar',
     cap: 12, capex: 40, opex: 0.3, fuel: 0, ramp: 1,
     kind: 'renewable', variable: 'solar', firm: false,
     terrain: ['grass', 'field'],
@@ -24,7 +24,7 @@ export const PLANTS = {
     tip: 'Cheap energy, but it cannot cover the evening peak. Pair it with batteries or hydro.',
   },
   wind: {
-    id: 'wind', name: 'Wind Turbine', emoji: '🌀',
+    id: 'wind', name: 'Wind Turbine', icon: 'plant:wind',
     cap: 10, capex: 65, opex: 0.6, fuel: 0, ramp: 1,
     kind: 'renewable', variable: 'wind', firm: false,
     terrain: ['grass', 'hill', 'field'],
@@ -33,7 +33,7 @@ export const PLANTS = {
     tip: 'Wind lulls are the classic blackout cause. Keep firm backup or storage.',
   },
   hydro: {
-    id: 'hydro', name: 'Run-of-River Station', emoji: '💧',
+    id: 'hydro', name: 'Run-of-River Station', icon: 'plant:hydro',
     cap: 14, capex: 95, opex: 0.8, fuel: 0, ramp: 0.6,
     kind: 'renewable', variable: 'hydro', firm: true, dispatchable: true,
     terrain: ['river'], maxCount: 4,
@@ -41,7 +41,7 @@ export const PLANTS = {
     tip: 'The only free dispatchable plant — take every viable river site early.',
   },
   coal: {
-    id: 'coal', name: 'Coal Station', emoji: '🏭',
+    id: 'coal', name: 'Coal Station', icon: 'plant:coal',
     cap: 30, capex: 130, opex: 1.2, fuel: 3.2, ramp: 0.12,
     kind: 'thermal', firm: true, dispatchable: true, maxCount: 3, smog: 1,
     terrain: ['grass', 'field'],
@@ -49,7 +49,7 @@ export const PLANTS = {
     tip: 'Needs a few hours to climb to full power. Do not count on it for a sudden spike.',
   },
   gas: {
-    id: 'gas', name: 'Gas Peaker', emoji: '🔥',
+    id: 'gas', name: 'Gas Peaker', icon: 'plant:gas',
     cap: 12, capex: 55, opex: 0.5, fuel: 7.5, ramp: 0.5,
     kind: 'thermal', firm: true, dispatchable: true, smog: 0.5,
     terrain: ['grass', 'field', 'hill'],
@@ -57,7 +57,7 @@ export const PLANTS = {
     tip: 'Your disaster insurance. Running it through a whole winter is how grids go bankrupt.',
   },
   nuclear: {
-    id: 'nuclear', name: 'Nuclear Plant', emoji: '⚛️',
+    id: 'nuclear', name: 'Nuclear Plant', icon: 'plant:nuclear',
     cap: 60, capex: 320, opex: 3.0, fuel: 0.5, ramp: 0.05,
     kind: 'thermal', firm: true, dispatchable: true, maxCount: 2, needsWater: true,
     terrain: ['grass', 'field'],
@@ -65,7 +65,7 @@ export const PLANTS = {
     tip: 'One disaster here can end the run. Keep spare capacity when you build one.',
   },
   battery: {
-    id: 'battery', name: 'Battery Bank', emoji: '🔋',
+    id: 'battery', name: 'Battery Bank', icon: 'plant:battery',
     cap: 10, capex: 70, opex: 0.4, fuel: 0, ramp: 1,
     kind: 'storage', power: 10, energy: 60, efficiency: 0.9, maxCount: 8,
     terrain: ['grass', 'field', 'forest'],

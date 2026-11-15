@@ -12,7 +12,7 @@
 
   <header id="topbar">
     <div class="brand">
-      <span class="logo">⚡</span>
+      <span class="logo" data-icon="mark:bolt" data-size="20"></span>
       <span class="wordmark">Gridling</span>
     </div>
 
@@ -27,7 +27,11 @@
       </div>
       <div class="stat" id="stat-weather" title="Weather">
         <span class="k">Weather</span>
-        <span class="v" id="v-weather">☀️ Clear</span>
+        <span class="v"><span id="v-weather-ico" class="inline-ico"></span><span id="v-weather">Clear</span></span>
+      </div>
+      <div class="stat" id="stat-supply" title="Served vs wanted, this hour">
+        <span class="k">Supply</span>
+        <span class="v"><span class="bar"><span id="v-supplyfill"></span></span><span id="v-supply">100%</span></span>
       </div>
       <div class="stat money" id="stat-money" title="Cash in the bank">
         <span class="k">Cash (k$)</span>
@@ -60,9 +64,10 @@
   <main>
     <section id="board">
       <div id="forecast"><span class="flabel">Outlook</span><span id="forecast-chips"></span></div>
-      <canvas id="map"></canvas>
+      <div id="mapwrap"><canvas id="map"></canvas></div>
       <canvas id="chart" width="800" height="120"></canvas>
       <div id="ticker"></div>
+      <div id="toasts"></div>
     </section>
 
     <aside id="panel">
@@ -92,7 +97,6 @@
   </main>
 
   <div id="coach" hidden></div>
-  <div id="toasts"></div>
 </div>
 
 <div id="modal" hidden>

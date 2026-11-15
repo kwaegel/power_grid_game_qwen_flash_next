@@ -106,6 +106,7 @@ const report = () => G(() => {
     // town count are read from the run state instead.
     year: window.__gridling.cal.calendarOf(g.tick).year,
     cities: g.cities.length,
+    townNames: g.cities.map((c) => c.name),
   };
 });
 
@@ -126,7 +127,7 @@ async function tilePoint(tx, ty) {
   return G(({ tx, ty }) => {
     const geo = window.__gridling.ui.geo;
     const r = document.getElementById('map').getBoundingClientRect();
-    return { x: r.left + geo.ox + (tx + 0.5) * geo.ts, y: r.top + geo.oy + (ty + 0.5) * geo.ts };
+    return { x: r.left + geo.ox + (tx + 0.5) * geo.ts, y: r.top + geo.oy + (ty + 0.5) * geo.ch };
   }, { tx, ty });
 }
 
@@ -202,8 +203,8 @@ async function offscreenReport() {
     }
     const map = document.getElementById('map').getBoundingClientRect();
     if (map.height < vh * 0.34) bad.push(`map only ${Math.round(map.height)}px tall of ${vh}`);
-    const ts = window.__gridling.ui.geo ? window.__gridling.ui.geo.ts : 0;
-    if (ts < 26) bad.push(`tiles only ${ts}px wide, too small to read`);
+    const geo = window.__gridling.ui.geo || { ts: 0, ch: 0 };
+    if (geo.ts < 26 || geo.ch < 26) bad.push(`cells only ${geo.ts}x${geo.ch}px, too small to read`);
     return bad;
   });
 }
@@ -222,6 +223,27 @@ await sleep(500);
 check('stylesheet applied', await G(() => document.styleSheets.length >= 1 &&
   getComputedStyle(document.querySelector('main')).display === 'grid'));
 check('title screen appears', await page.isVisible('#modal-card h1'), await textOf('#modal-card h1'));
+// the first screen must already show a working world, not four empty boxes
+{
+  const boot = await canvasHealth();
+  check('the map is drawn behind the title card', boot.distinct > 24 && boot.mapW > 600, JSON.stringify(boot));
+  const painted = await G(() => {
+    const bad = [];
+    for (const [sel, label] of [['#chart', 'chart'], ['#forecast-chips', 'outlook'], ['#palette', 'plant list']]) {
+      const el = document.querySelector(sel);
+      if (!el) { bad.push(`${label} missing`); continue; }
+      const r = el.getBoundingClientRect();
+      if (r.width < 40 || r.height < 12) bad.push(`${label} collapsed to ${Math.round(r.width)}x${Math.round(r.height)}`);
+      const hasPaint = el.tagName === 'CANVAS' || !!el.querySelector('canvas') || !!el.textContent.trim();
+      if (!hasPaint) bad.push(`${label} is empty`);
+    }
+    const demo = document.querySelector('#stat-date .k').textContent;
+    if (!/demo/i.test(demo)) bad.push(`backdrop date not labelled as a demo: ${demo}`);
+    return bad;
+  });
+  check('first screen has no empty panels', painted.length === 0, painted.join(' | '));
+  check('the demo world never writes a save', await G(() => !localStorage.getItem('gridling:autosave')));
+}
 await shot('01-title');
 check('no page errors on load', pageErrors.length === 0, pageErrors.join(' | '));
 
@@ -252,6 +274,39 @@ await shot('03-help');
 await page.click('#modal-card [data-a="close"]');
 await sleep(200);
 
+// ---- drawn icons ------------------------------------------------------------
+// Every icon is a canvas painted by src/icons.js from a spec string. A spec the
+// glyph table does not know falls back to a "?" placeholder, and a slot nobody
+// painted stays an empty span, so check both, then confirm the canvases hold
+// real opaque paint (the canvas is transparent apart from the glyph).
+{
+  const icons = await G(() => {
+    const spans = [...document.querySelectorAll('span[data-icon]')];
+    const missing = spans.filter((s) => s.querySelector('.iconic-missing')).map((s) => s.dataset.icon);
+    const thin = [];
+    for (const s of spans) {
+      const cv = s.querySelector('canvas');
+      if (!cv || !cv.width) { thin.push(`${s.dataset.icon}: unpainted`); continue; }
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      let ink = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128) ink++;
+      if (ink < cv.width * cv.height * 0.08) thin.push(`${s.dataset.icon}: ink ${ink}/${cv.width * cv.height}`);
+    }
+    const specs = spans.map((s) => s.dataset.icon);
+    const want = ['mark:bolt', ...window.__gridling.plantIds.map((id) => `plant:${id}`)];
+    const absent = want.filter((spec) => !specs.includes(spec));
+    return { total: spans.length, missing, thin: thin.slice(0, 6), absent };
+  });
+  check('every icon slot is painted, none missing or blank',
+    icons.missing.length === 0 && icons.thin.length === 0 && icons.absent.length === 0,
+    `${icons.total} slots` +
+    (icons.missing.length ? `, placeholder: ${icons.missing.join(', ')}` : '') +
+    (icons.thin.length ? `, thin: ${icons.thin.join(', ')}` : '') +
+    (icons.absent.length ? `, absent: ${icons.absent.join(', ')}` : ''));
+  const rows = await G(() => document.querySelectorAll('#palette .pcard canvas').length);
+  check('build palette draws plant shapes instead of text glyphs', rows >= 7, `${rows} canvases in the palette`);
+}
+
 // ---- build by clicking, like a player (with funds available) ----------------
 console.log('--- building ---');
 await setSpeed(0);
@@ -279,6 +334,28 @@ check('fleet grew to 6 plants', st1.plants >= 6, JSON.stringify({ plants: st1.pl
   await sleep(250);
   const why = await lastToast();
   check('unaffordable build is refused with the price', /Costs \$\d+ — you have/.test(why), why.slice(-130));
+  // toasts must not sit on top of the chart or the side panel: they live in a
+  // reserved strip in the board column, so assert the boxes are disjoint.
+  const overlap = await G(() => {
+    const boxes = [...document.querySelectorAll('#toasts .toast')].map((t) => t.getBoundingClientRect());
+    if (!boxes.length) return 'no toast on screen';
+    const hits = [];
+    for (const [name, sel] of [['chart', '#chart'], ['panel', '#panel'], ['map', '#map']]) {
+      const r = document.querySelector(sel).getBoundingClientRect();
+      for (const b of boxes) {
+        if (b.right > r.left + 2 && b.left < r.right - 2 && b.bottom > r.top + 2 && b.top < r.bottom - 2) {
+          const w = Math.round(Math.min(b.right, r.right) - Math.max(b.left, r.left));
+          const h = Math.round(Math.min(b.bottom, r.bottom) - Math.max(b.top, r.top));
+          hits.push(`${name} by ${w}x${h}px`);
+        }
+      }
+    }
+    const strip = document.getElementById('toasts').getBoundingClientRect();
+    const board = document.getElementById('board').getBoundingClientRect();
+    if (strip.right > board.right + 1 || strip.left < board.left - 1) hits.push('strip escapes the board column');
+    return hits.length ? 'overlaps ' + hits.join(', ') : `clear (${boxes.length} toast(s))`;
+  });
+  check('toasts stay off the chart, map and panel', /^clear/.test(overlap), overlap);
   await G(() => { window.__gridling.state().money = 420; });
   await page.keyboard.press('Escape');
   await sleep(150);
@@ -425,6 +502,8 @@ check('disasters actually struck', rep.struck.length >= 2, rep.struck.join(','))
 check('disasters did damage that crews repaired', rep.damage > 0 && rep.repairs > 0, `damage=${rep.damage} repairs=${rep.repairs}`);
 check('difficulty ramps: new towns connected and the calendar advanced',
   rep.cities >= 4 && rep.year >= 3, `${rep.cities} towns, in year ${rep.year}`);
+check('every connected town has its own name on the map',
+  new Set(rep.townNames).size === rep.townNames.length, rep.townNames.join(', '));
 check('goodwill stayed above 55 with careful play', st2.sat > 55, `sat=${st2.sat}`);
 const off1 = await offscreenReport();
 check('layout / readability at 1440x900', off1.length === 0, off1.join(' | '));
@@ -432,6 +511,44 @@ const health = await canvasHealth();
 check('map canvas renders varied content', health.distinct > 24, JSON.stringify(health));
 const over1 = await overflowReport();
 check('no text overflows its container', over1.length === 0, over1.join(' | '));
+
+// ---- the glanceable readouts -------------------------------------------------
+{
+  const read = await G(() => {
+    const g = window.__gridling.state();
+    const cov = Math.round((g.lastServed / g.lastDemand) * 100);
+    const bar = document.getElementById('v-supplyfill');
+    return {
+      shown: document.getElementById('v-supply').textContent,
+      computed: cov,
+      width: bar.style.width,
+      fillColour: getComputedStyle(bar).backgroundColor,
+      weatherCanvas: !!document.querySelector('#v-weather-ico canvas'),
+      weatherText: document.getElementById('v-weather').textContent,
+      chips: document.querySelectorAll('#forecast-chips .chip').length,
+      forecastChips: document.querySelectorAll('#forecast-chips .chip:not(.alarm)').length,
+      chipCanvases: document.querySelectorAll('#forecast-chips canvas').length,
+      chipWords: [...document.querySelectorAll('#forecast-chips .chip .cw')].map((e) => e.textContent.trim()),
+      outlookSpill: Math.round(document.getElementById('forecast-chips').getBoundingClientRect().right
+        - document.getElementById('forecast').getBoundingClientRect().right),
+      hazardBanner: !document.getElementById('hazardbanner').hidden,
+      hazardCanvas: !!document.querySelector('#hazardbanner canvas'),
+      statLabels: [...document.querySelectorAll('#topbar .stat .k')].map((k) => k.textContent.trim()),
+    };
+  });
+  check('supply bar tracks served/demand', read.shown === `${read.computed}%` && /%$/.test(read.width),
+    JSON.stringify({ shown: read.shown, computed: read.computed, width: read.width }));
+  check('weather readout is a drawn glyph plus a name', read.weatherCanvas && /^[A-Z]/.test(read.weatherText), read.weatherText);
+  check('outlook strip paints a glyph and a weather word per day ahead',
+    read.chips >= 1 && read.forecastChips >= 1 && read.chipCanvases === read.chips
+      && read.chipWords.length === read.forecastChips && read.chipWords.every((w) => /^[A-Z]/.test(w)),
+    `${read.chipCanvases}/${read.chips} painted, words: ${read.chipWords.join(', ')}`);
+  check('outlook strip stays inside its bar', read.outlookSpill <= 0, `spill ${read.outlookSpill}px`);
+  if (read.hazardBanner) {
+    check('hazard banner paints its glyph', read.hazardCanvas);
+  }
+  check('top bar labels the money unit', read.statLabels.some((t) => /k\$/i.test(t)), read.statLabels.join(' / '));
+}
 
 // narrower window
 await page.setViewportSize({ width: 1120, height: 720 });
@@ -444,6 +561,14 @@ await sleep(600);
 
 // ---- save, reload, continue -------------------------------------------------
 console.log('--- save / reload / continue ---');
+// the documented behaviour is a periodic autosave; assert it writes on its own
+// rather than only when the player presses Save now
+await setSpeed(4);
+await G(() => { localStorage.removeItem('gridling:autosave'); });
+await sleep(14000);
+check('autosave writes by itself while the run plays',
+  await G(() => !!localStorage.getItem('gridling:autosave')),
+  await G(() => `idle ${Math.round((Date.now() - window.__gridling.ui.autosaveAt) / 1000)}s since last autosave`));
 await setSpeed(0);
 const saved = await saveNowAndRead();
 check('save written to localStorage', await G(() => !!localStorage.getItem('gridling:autosave')));
@@ -551,6 +676,19 @@ const shown = parseInt((await textOf('.bigscore')).replace(/[^0-9]/g, ''), 10);
 check('shown score matches the run state', !!lost && shown > 0 && Math.abs(shown - lost.score) <= 2, `shown ${shown} vs state ${lost && lost.score}`);
 const scores = await G(() => JSON.parse(localStorage.getItem('gridling:scores') || '[]'));
 check('best-score table persisted', scores.length >= 1, JSON.stringify(scores[0] || {}).slice(0, 200));
+// the careless run built nothing, so replaying its seed straight through the engine
+// must reproduce the exact same death — the strongest available proof that the
+// simulation is deterministic under real browser conditions
+if (scores.length && lost) {
+  const replay = await G((seed) => {
+    const g = window.__gridling.createGame(seed);
+    while (!g.over && g.tick < 20 * 4000) window.__gridling.tick(g);
+    return { days: Math.floor(g.tick / 20), reason: g.over && g.over.title };
+  }, scores[0].seed);
+  check('the careless run replays identically from its seed',
+    replay.days === Math.floor(lost.tick / 20) && replay.reason === lost.over,
+    `seed ${scores[0].seed}: browser ${Math.floor(lost.tick / 20)}d ${lost.over} vs replay ${replay.days}d ${replay.reason}`);
+}
 
 await page.reload();
 await sleep(800);

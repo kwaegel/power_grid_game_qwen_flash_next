@@ -8,6 +8,7 @@ import {
 } from './sim/engine.js';
 import { MONTH_NAMES, TICKS_PER_DAY, calendarOf } from './sim/world.js';
 import { drawWorld, layout, tileAt, drawChart } from './render.js';
+import { paintIcons } from './icons.js';
 import {
   saveGame, loadGame, saveMeta, clearSave, exportFile, importFileFromText,
   listScores, addScore, seenCoach, markCoach, storageAvailable,
@@ -16,11 +17,23 @@ import {
 const el = (id) => document.getElementById(id);
 const app = el('app');
 const mapCanvas = el('map');
+
+/** Repaint one [data-icon] span with a new glyph spec. */
+function setIcon(span, spec, size) {
+  if (!span || !spec) return;
+  if (span.dataset.icon !== spec || span.dataset.size !== String(size)) {
+    span.dataset.icon = spec;
+    span.dataset.size = String(size);
+    span.dataset.painted = '0';
+  }
+  paintIcons(span.parentNode || document);
+}
 const chartCanvas = el('chart');
 
 const ui = {
   game: null,
-  speed: 1,
+  preview: false,          // the decorative run behind the title card, never saved
+  speed: 0,
   buildSel: null,
   hover: null,
   hoverOk: false,
@@ -31,6 +44,7 @@ const ui = {
   lastLogLen: 0,
   geo: null,
   coachStep: -1,
+  autosaveAt: Date.now(),  // ms stamp of the last autosave
 };
 
 // ---------------------------------------------------------------- loop -------
@@ -42,6 +56,18 @@ let lastFrame = performance.now();
 function frame(now) {
   const dt = Math.min(0.25, (now - lastFrame) / 1000);
   lastFrame = now;
+  if (ui.preview && ui.game) {
+    // decorative backdrop: the world behind the title card keeps turning so the
+    // first thing a player sees is a living grid, not four empty boxes
+    acc += dt * 3;
+    let steps = 0;
+    while (acc >= 1 && steps < 6) { tick(ui.game); pushHist(); acc -= 1; steps++; }
+    if (acc > 6) acc = 0;
+    if (ui.game.over || ui.game.tick > TICKS_PER_DAY * 40) startPreview();
+    render();
+    requestAnimationFrame(frame);
+    return;
+  }
   if (ui.game && !ui.modalOpen && ui.speed > 0 && !ui.game.over) {
     acc += dt * BASE_TPS * ui.speed;
     let steps = 0;
@@ -52,13 +78,26 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+function pushHist() {
+  const g = ui.game;
+  const s = fleetSummary(g);
+  ui.hist.push({
+    day: Math.floor(g.tick / TICKS_PER_DAY) + 1,
+    hour: hourOf(g.tick),
+    demand: g.lastDemand,
+    served: g.lastServed,
+    potential: s.potential + s.batteryPower,
+    link: s.link,
+    deficit: g.lastDemand - g.lastServed,
+  });
+  if (ui.hist.length > 140) ui.hist.shift();
+}
+
 function step() {
   const g = ui.game;
   const beforeOver = g.over;
   tick(g);
-  const s = fleetSummary(g);
-  ui.hist.push({ demand: g.lastDemand, served: g.lastServed, potential: s.potential + s.batteryPower });
-  if (ui.hist.length > 110) ui.hist.shift();
+  pushHist();
   syncEvents();
   if (g.over && !beforeOver) onGameOver();
 }
@@ -69,17 +108,23 @@ function render() {
   if (!ui.game) return;
   const g = ui.game;
   ui.geo = layout(mapCanvas, MAP_COLS, MAP_ROWS);
+  // the chart is exactly as wide as the map card, so the two stack tidily
+  if (ui.chartW !== ui.geo.w) {
+    ui.chartW = ui.geo.w;
+    chartCanvas.style.width = `${ui.geo.w}px`;
+  }
   if (ui.hover && ui.buildSel) {
     ui.hoverOk = canBuild(g, ui.buildSel, ui.hover.x, ui.hover.y).ok;
   }
   drawWorld(g, ui.geo, ui);
   drawChart(chartCanvas, g, ui.hist);
   syncStats();
-  syncHazard();
+  if (ui.preview) el('hazardbanner').hidden = true;   // no alarms behind the title card
+  else syncHazard();
   syncForecast();
   if (Date.now() - ui.autosaveAt > 12000) {
     ui.autosaveAt = Date.now();
-    if (!g.over) saveGame(g);
+    if (!g.over && !ui.preview) saveGame(g);
   }
 }
 
@@ -97,10 +142,13 @@ function syncStats() {
   const g = ui.game;
   const s = fleetSummary(g);
   el('v-date').textContent = seasonName(calendarOf(g.tick).season);
-  el('stat-date').querySelector('.k').textContent = calendarText(g.tick);
+  el('stat-date').querySelector('.k').textContent =
+    ui.preview ? `Demo world · ${calendarText(g.tick)}` : calendarText(g.tick);
   el('v-clock').textContent = clockText(g.tick);
   const w = WEATHER[g.weather];
-  el('v-weather').textContent = `${w.emoji} ${w.name}`;
+  el('v-weather').textContent = w.name;
+  setIcon(el('v-weather-ico'), w.icon, 18);
+  el('stat-weather').title = `Weather: ${w.name} — sun ×${w.solar}, wind ×${w.wind}`;
   el('v-money').textContent = `${g.money < 0 ? '-' : ''}$${fmtMoney(Math.abs(g.money))}`;
   el('stat-money').classList.toggle('neg', g.money < 0);
   const sat = Math.round(g.satisfaction);
@@ -111,17 +159,25 @@ function syncStats() {
   el('stat-sat').classList.toggle('warnstate', sat <= 30);
   el('v-score').textContent = Math.round(g.score).toLocaleString('en-US');
 
-  const d = g.lastDemand, served = g.lastServed, avail = s.potential + s.batteryPower;
-  const parts = [
-    `demand ${Math.round(d)} MW`,
-    `served ${Math.round(served)} MW`,
-    `available ${Math.round(avail)} MW`,
-    `tie-line ${Math.round(s.link)} MW`,
-  ];
+  // supply headroom, so the thing you are actually managing is a glanceable bar
+  const coverage = g.lastDemand > 0 ? (g.lastServed / g.lastDemand) * 100 : 100;
+  const sfill = el('v-supplyfill');
+  sfill.style.width = `${Math.min(100, coverage)}%`;
+  sfill.style.background = coverage >= 99.5 ? 'var(--leaf)' : coverage >= 90 ? 'var(--warn)' : 'var(--alert)';
+  el('v-supply').textContent = `${Math.round(coverage)}%`;
+  el('stat-supply').classList.toggle('warnstate', coverage < 90);
+
+  // the chart above already prints demand / served / available, so this line only
+  // carries what the chart cannot show: the flows across the wire and into storage
+  const s2 = g.lastFlow;
+  const parts = [`tie-line ${Math.round(s.link)} MW`];
   if (s.storageCap) parts.push(`stored ${Math.round(s.stored)}/${Math.round(s.storageCap)} MWh`);
-  if (g.lastFlow.charge > 0.5) parts.push(`charging ${Math.round(g.lastFlow.charge)} MW`);
-  if (g.lastFlow.discharge > 0.5) parts.push(`discharging ${Math.round(g.lastFlow.discharge)} MW`);
-  if (g.lastFlow.curtail > 2) parts.push(`curtailed ${Math.round(g.lastFlow.curtail)} MW`);
+  if (s2.charge > 0.5) parts.push(`charging ${Math.round(s2.charge)} MW`);
+  if (s2.discharge > 0.5) parts.push(`discharging ${Math.round(s2.discharge)} MW`);
+  if (s2.curtail > 2) parts.push(`curtailed ${Math.round(s2.curtail)} MW`);
+  if (g.lastDemand - g.lastServed > 0.5) {
+    parts.push(`shortfall ${Math.round(g.lastDemand - g.lastServed)} MW`);
+  }
   el('ticker').textContent = parts.join('  ·  ');
 }
 
@@ -129,14 +185,22 @@ function syncHazard() {
   const g = ui.game;
   const b = el('hazardbanner');
   const h = g.hazard;
-  if (!h) { b.hidden = true; return; }
+  if (!h) { b.hidden = true; ui.hzKey = null; ui.hzWhen = null; return; }
   const def = HAZARDS[h.id];
-  b.hidden = false;
-  b.className = h.phase === 'warn' ? 'warn' : 'active';
   const when = h.phase === 'warn'
     ? `expected in ~${fmtDur(h.ticksLeft)}`
     : `under way for ~${fmtDur(h.ticksLeft)} more`;
-  b.innerHTML = `${def.emoji} <span>${def.name} — ${when}</span> <span class="count">${def.advice}</span>`;
+  const key = `${h.id}:${h.phase}`;
+  if (ui.hzKey !== key) {
+    ui.hzKey = key;
+    b.hidden = false;
+    b.className = h.phase === 'warn' ? 'warn' : 'active';
+    b.innerHTML = `<span class="bico" data-icon="${def.icon}" data-size="22"></span>`
+      + `<span class="hzhead"></span> <span class="count">${def.advice}</span>`;
+    ui.hzWhen = b.querySelector('.hzhead');
+    paintIcons(b);
+  }
+  if (ui.hzWhen) ui.hzWhen.textContent = `${def.name} — ${when}`;
 }
 
 function fmtDur(ticks) {
@@ -149,17 +213,22 @@ function fmtDur(ticks) {
 
 function syncForecast() {
   const g = ui.game;
+  const warn = g.hazard && g.hazard.phase === 'warn' ? g.hazard.id : '';
+  const key = `${warn}|${g.forecast.join(',')}`;
+  if (ui.fcKey === key) return;
+  ui.fcKey = key;
   const chips = [];
-  if (g.hazard && g.hazard.phase === 'warn') {
-    const def = HAZARDS[g.hazard.id];
-    chips.push(`<span class="chip" title="${def.text}">${def.emoji} ${def.name}!</span>`);
+  if (warn) {
+    const def = HAZARDS[warn];
+    chips.push(`<span class="chip alarm" title="${escapeHtml(def.text)}"><span class="lico" data-icon="${def.icon}" data-size="18"></span><b>${def.name}!</b></span>`);
   }
   for (const w of g.forecast) {
     const def = WEATHER[w];
     const eff = w === 'calm' || w === 'storm' || w === 'heat' || w === 'frost' ? `wind ×${def.wind} · sun ×${def.solar}` : '';
-    chips.push(`<span class="chip" title="${def.name}${eff ? ' — ' + eff : ''}">${def.emoji}</span>`);
+    chips.push(`<span class="chip" title="${def.name}${eff ? ' — ' + eff : ''}"><span class="lico" data-icon="${def.icon}" data-size="18"></span><span class="cw">${def.name}</span></span>`);
   }
   el('forecast-chips').innerHTML = chips.join('');
+  paintIcons(el('forecast-chips'));
 }
 
 function syncEvents() {
@@ -168,7 +237,7 @@ function syncEvents() {
   const fresh = g.log.slice(ui.lastLogLen);
   ui.lastLogLen = g.log.length;
   for (const e of fresh) {
-    if (e.kind === 'warn' || e.kind === 'bad') toast(e.text, e.kind);
+    if (e.kind === 'warn' || e.kind === 'bad') toast(e.text, e.kind, e.icon);
   }
   renderLog();
   if (fresh.some((e) => e.kind === 'bad' || e.kind === 'warn')) syncDetailIfOpen();
@@ -178,9 +247,11 @@ function renderLog() {
   const g = ui.game;
   const rows = g.log.slice(-40).reverse().map((e) => {
     const c = calendarOf(e.tick);
-    return `<div class="lrow ${e.kind}"><span class="lt">${MONTH_NAMES[c.month]} ${c.dom}, Y${c.year} ${clockText(e.tick)}</span>${escapeHtml(e.text)}</div>`;
+    const ico = e.icon ? `<span class="lico" data-icon="${e.icon}" data-size="16"></span>` : '';
+    return `<div class="lrow ${e.kind}"><span class="lt">${MONTH_NAMES[c.month]} ${c.dom}, Y${c.year} ${clockText(e.tick)}</span>${ico}${escapeHtml(e.text)}</div>`;
   });
   el('log').innerHTML = rows.join('');
+  paintIcons(el('log'));
 }
 
 function escapeHtml(s) {
@@ -198,12 +269,13 @@ function renderPalette() {
     const afford = g.money >= d.capex;
     return `<div class="pcard ${ui.buildSel === id ? 'sel' : ''} ${afford ? '' : 'cant'}" data-plant="${id}"
       title="${escapeHtml(d.blurb)}">
-      <div class="ico">${d.emoji}</div>
+      <div class="ico"><span data-icon="${d.icon}" data-size="30"></span></div>
       <div><div class="nm">${d.name}${limited}</div><div class="ds">${escapeHtml(d.blurb)}</div></div>
       <div class="price ${afford ? '' : 'no'}">$${fmtMoney(d.capex)}</div>
     </div>`;
   }).join('');
   el('palette').innerHTML = html;
+  paintIcons(el('palette'));
   el('palette').querySelectorAll('.pcard').forEach((c) => {
     c.addEventListener('click', () => selectBuild(c.dataset.plant));
   });
@@ -215,7 +287,7 @@ function selectBuild(id) {
   renderPalette();
   if (ui.buildSel) {
     const d = PLANTS[ui.buildSel];
-    toast(`${d.emoji} ${d.name}: ${d.tip}`, 'info');
+    toast(`${d.name}: ${d.tip}`, 'info', d.icon);
   }
 }
 
@@ -227,12 +299,13 @@ function renderUpgrades() {
     const cost = maxed ? null : u.costs[lvl];
     const afford = cost != null && g.money >= cost;
     return `<div class="ucard">
-      <div class="ico">${u.emoji}</div>
+      <div class="ico"><span data-icon="${u.icon}" data-size="28"></span></div>
       <div><div class="nm">${u.name} · Lv ${lvl}${maxed ? ' (max)' : ''}</div>
       <div class="ds">${escapeHtml(u.desc)}<br>Now: ${escapeHtml(u.at(lvl))}${maxed ? '' : ` → next: ${escapeHtml(u.at(lvl + 1))}`}</div></div>
       <button data-up="${u.id}" ${maxed || !afford ? 'disabled' : ''}>${maxed ? 'Max' : '$' + fmtMoney(cost)}</button>
     </div>`;
   }).join('');
+  paintIcons(el('upgrades'));
   el('upgrades').querySelectorAll('button[data-up]').forEach((b) => {
     b.addEventListener('click', () => {
       const r = buyUpgrade(ui.game, b.dataset.up);
@@ -267,7 +340,7 @@ function openDetail(uid) {
   box.hidden = false;
   const isStore = d.kind === 'storage';
   box.innerHTML = `
-    <h3>${d.emoji} ${d.name}</h3>
+    <h3><span class="lico" data-icon="${d.icon}" data-size="20"></span> ${d.name}</h3>
     <div class="rowline"><span>Rated</span><b>${d.cap} MW</b></div>
     <div class="rowline"><span>Right now</span><b>${p.on ? Math.round(p.out) + ' MW' : 'off'}</b></div>
     <div class="rowline"><span>Weather ceiling</span><b>${isStore ? '—' : Math.round(cap) + ' MW'}</b></div>
@@ -282,12 +355,13 @@ function openDetail(uid) {
       <button data-act="sell">Sell (+$${fmtMoney(Math.round(d.capex * 0.3))})</button>
       <button data-act="close">Close</button>
     </div>`;
+  paintIcons(box);
   // position inside the panel; #detail is absolute within #panel, so all
   // coordinates here are panel-relative
   const pb = el('panel').getBoundingClientRect();
   const geo = ui.geo;
   const mapRect = mapCanvas.getBoundingClientRect();
-  const absY = mapRect.top + geo.oy + (p.y + 0.5) * geo.ts - pb.top;
+  const absY = mapRect.top + geo.oy + (p.y + 0.5) * geo.ch - pb.top;
   const w = 292, h = box.offsetHeight || 190;
   box.style.left = Math.max(6, pb.width - w - 8) + 'px';
   box.style.top = Math.max(6, Math.min(pb.height - h - 8, absY - 40)) + 'px';
@@ -314,15 +388,23 @@ function syncDetailIfOpen() {
 
 // ---------------------------------------------------------------- toasts -----
 
-function toast(text, kind = 'info') {
+function toast(text, kind = 'info', icon = null) {
   const box = el('toasts');
   const d = document.createElement('div');
   d.className = `toast ${kind === 'info' ? '' : kind}`;
-  d.textContent = text;
+  if (icon) d.innerHTML = `<span class="lico" data-icon="${icon}" data-size="18"></span>`;
+  const label = document.createElement('span');
+  label.className = 'ttext';
+  label.textContent = text;
+  label.title = text;
+  d.appendChild(label);
   box.appendChild(d);
+  if (icon) paintIcons(d);
+  // one full-width line, so the message is not truncated mid-word; the Report tab
+  // keeps the full record.
+  while (box.children.length > 1) box.firstChild.remove();
   setTimeout(() => { d.style.opacity = '0'; d.style.transition = 'opacity .4s'; }, 4200);
   setTimeout(() => d.remove(), 4700);
-  while (box.children.length > 4) box.firstChild.remove();
 }
 
 // ---------------------------------------------------------------- coach ------
@@ -373,6 +455,7 @@ function openModal(html) {
   ui.modalOpen = true;
   el('modal').hidden = false;
   el('modal-card').innerHTML = html;
+  paintIcons(el('modal-card'));
   return el('modal-card');
 }
 function closeModal() {
@@ -388,7 +471,7 @@ function titleScreen() {
       scores.slice(0, 5).map((s) => `<tr><td>${s.score.toLocaleString('en-US')}</td><td>${s.days}</td><td>${s.delivered.toLocaleString('en-US')} MWh</td><td>${escapeHtml(s.reason)}</td></tr>`).join('')}</table>`
     : '<p class="hint">No records yet.</p>';
   const card = openModal(`
-    <h1>⚡ Gridling</h1>
+    <h1><span class="mark" data-icon="mark:bolt" data-size="26"></span> Gridling</h1>
     <p>You run the electricity grid for a small region. Keep <b>supply ≥ demand</b>, keep the customers happy,
     and keep the bank account out of the red as the years get meaner.</p>
     <div class="acts">
@@ -411,7 +494,7 @@ function titleScreen() {
 function helpModal() {
   const plantRows = PLANT_ORDER.map((id) => {
     const d = PLANTS[id];
-    return `<tr><td>${d.emoji} ${d.name}</td><td>$${fmtMoney(d.capex)}</td><td>${d.cap} MW</td><td>${d.fuel ? '$' + d.fuel + '/MWh' : 'free'}</td><td>${escapeHtml(d.blurb)}</td></tr>`;
+    return `<tr><td><span class="lico" data-icon="${d.icon}" data-size="18"></span> ${d.name}</td><td>$${fmtMoney(d.capex)}</td><td>${d.cap} MW</td><td>${d.fuel ? '$' + d.fuel + '/MWh' : 'free'}</td><td>${escapeHtml(d.blurb)}</td></tr>`;
   }).join('');
   const card = openModal(`
     <h1>How to play</h1>
@@ -424,7 +507,7 @@ function helpModal() {
       <li>Shutting a plant down <b>halves the damage</b> it takes in a disaster, but it also produces nothing.</li>
     </ul>
     <h2>You lose if</h2>
-    <ul><li>customer goodwill empties (long or deep blackouts), or</li><li>the bank goes more than $15k overdrawn.</li></ul>
+    <ul><li>customer goodwill empties (long or deep blackouts), or</li><li>the bank goes more than $12k overdrawn.</li></ul>
     <h2>The plants</h2>
     <table><tr><th>Plant</th><th>Cost</th><th>Rated</th><th>Fuel</th><th>Notes</th></tr>${plantRows}</table>
     <h2>Keyboard</h2>
@@ -531,7 +614,7 @@ function onGameOver() {
     `<tr><td>${i + 1}</td><td>${s.score.toLocaleString('en-US')}</td><td>${s.days}</td><td>${s.delivered.toLocaleString('en-US')}</td><td>${escapeHtml(s.reason)}</td></tr>`).join('');
   setSpeed(0);
   const card = openModal(`
-    <h1>${o.title === 'Bankrupt' ? '💸' : '📉'} ${escapeHtml(o.title)}</h1>
+    <h1><span class="mark" data-icon="${o.title === 'Bankrupt' ? 'mark:money' : 'mark:down'}" data-size="26"></span> ${escapeHtml(o.title)}</h1>
     <p>${escapeHtml(o.detail)}</p>
     <div class="bigscore">${o.score.toLocaleString('en-US')}</div>
     <div class="kv"><span>You lasted</span><b>${o.days} days (Year ${calendarOf(o.tick).year})</b></div>
@@ -553,16 +636,21 @@ function onGameOver() {
 // ---------------------------------------------------------------- game start --
 
 function setSpeed(n) {
+  if (ui.preview) return;     // the title-card backdrop runs on its own clock
   ui.speed = n;
   document.querySelectorAll('#speeds button').forEach((b) => b.classList.toggle('on', +b.dataset.speed === n));
 }
 
 function adoptGame(g, msg) {
   ui.game = g;
+  ui.preview = false;
   ui.hist = [];
   ui.selected = null;
   ui.buildSel = null;
   ui.lastLogLen = g.log.length;
+  ui.hzKey = null;
+  ui.hzWhen = null;
+  ui.fcKey = null;
   closeDetail();
   closeModal();
   setSpeed(1);
@@ -570,6 +658,36 @@ function adoptGame(g, msg) {
   switchTab('build');
   renderLog();
   if (msg) toast(msg, 'good');
+}
+
+// A run ticks quietly behind the title card, so the very first screen shows a
+// working grid instead of four empty boxes. Fixed seed, never saved, and it
+// restarts after ~40 days so the backdrop can never decay into a dead run.
+function startPreview() {
+  const g = createGame(20261115);
+  ui.game = g;
+  ui.preview = true;
+  ui.hist = [];
+  ui.selected = null;
+  ui.buildSel = null;
+  ui.speed = 0;
+  closeDetail();
+  // decorative builds so the backdrop shows a region that has actually been
+  // worked on, not just the two starter plants. Money is topped up purely to
+  // place them; this run is never saved and never becomes the player's.
+  g.money = 5000;
+  for (const id of ['wind', 'solar', 'battery', 'wind', 'hydro']) {
+    let done = false;
+    for (let y = 1; y < MAP_ROWS - 1 && !done; y++)
+      for (let x = 0; x < MAP_COLS && !done; x++)
+        if (canBuild(g, id, x, y).ok) { buildPlant(g, id, x, y); done = true; }
+  }
+  // 70 hours of history means the chart and the log have real content the moment
+  // the page appears, rather than filling in while the player reads the card
+  for (let i = 0; i < 70 && !g.over; i++) { tick(g); pushHist(); }
+  ui.lastLogLen = g.log.length;
+  renderPalette();
+  renderLog();
 }
 
 function newGame() {
@@ -588,7 +706,7 @@ function continueGame() {
 // ---------------------------------------------------------------- input ------
 
 mapCanvas.addEventListener('mousemove', (e) => {
-  if (!ui.game || !ui.geo) return;
+  if (!ui.game || ui.preview || !ui.geo) return;
   const r = mapCanvas.getBoundingClientRect();
   const t = tileAt(e.clientX - r.left, e.clientY - r.top, ui.geo);
   ui.hover = t;
@@ -596,7 +714,7 @@ mapCanvas.addEventListener('mousemove', (e) => {
 mapCanvas.addEventListener('mouseleave', () => { ui.hover = null; });
 
 mapCanvas.addEventListener('click', (e) => {
-  if (!ui.game || !ui.geo) return;
+  if (!ui.game || ui.preview || !ui.geo) return;
   const r = mapCanvas.getBoundingClientRect();
   const t = tileAt(e.clientX - r.left, e.clientY - r.top, ui.geo);
   if (!t) return;
@@ -639,11 +757,13 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('resize', () => { if (ui.selected != null) syncDetailIfOpen(); });
-window.addEventListener('beforeunload', () => { if (ui.game && !ui.game.over) saveGame(ui.game); });
+window.addEventListener('beforeunload', () => {
+  if (ui.game && !ui.preview && !ui.game.over) saveGame(ui.game);
+});
 
 // expose a small handle for automated play-testing
 window.__gridling = {
-  ui, tick, createGame, serialize, canBuild,
+  ui, tick, createGame, serialize, canBuild, plantIds: PLANT_ORDER,
   summary: (g) => fleetSummary(g),
   setTps: (n) => { BASE_TPS = n; },
   buildAt: (id, x, y) => buildPlant(ui.game, id, x, y),
@@ -658,5 +778,7 @@ window.__gridling = {
 // ---------------------------------------------------------------- boot -------
 
 app.hidden = false;
+paintIcons(app);          // the static shell (the logo) paints once here
+startPreview();           // decorative world behind the title card, never saved
 titleScreen();
 requestAnimationFrame(frame);
