@@ -6,8 +6,8 @@ export const HOURS_PER_DAY = 20;
 export const DAYS_PER_MONTH = 5;
 export const MONTHS = 12;
 export const DAYS_PER_YEAR = DAYS_PER_MONTH * MONTHS;   // 60 days
-export const TICKS_PER_DAY = HOURS_PER_DAY * TICKS_PER_HOUR; // 60
-export const TICKS_PER_YEAR = TICKS_PER_DAY * DAYS_PER_YEAR; // 3600
+export const TICKS_PER_DAY = HOURS_PER_DAY * TICKS_PER_HOUR; // 20
+export const TICKS_PER_YEAR = TICKS_PER_DAY * DAYS_PER_YEAR; // 1200
 
 export const MONTH_NAMES = [
   'Frostbite', 'Thaw', 'Sprout', 'Bloom', 'Green', 'Longlight',
