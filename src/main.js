@@ -6,7 +6,7 @@ import {
   UPGRADES, money as fmtMoney, seasonName, hourOf, availableCapacity,
   MAP_COLS, MAP_ROWS,
 } from './sim/engine.js';
-import { MONTH_NAMES, TICKS_PER_DAY, calendarOf } from './sim/world.js';
+import { MONTH_NAMES, TICKS_PER_DAY, TICKS_PER_YEAR, calendarOf } from './sim/world.js';
 import { drawWorld, layout, tileAt, drawChart } from './render.js';
 import { paintIcons } from './icons.js';
 import {
@@ -49,7 +49,7 @@ const ui = {
 
 // ---------------------------------------------------------------- loop -------
 
-let BASE_TPS = 2;         // sim ticks per real second at 1x (one in-game day ≈ 10 s)
+let BASE_TPS = 2;         // sim ticks per real second at 1x (one in-game day ≈ 12 s)
 let acc = 0;
 let lastFrame = performance.now();
 
@@ -90,7 +90,10 @@ function pushHist() {
     link: s.link,
     deficit: g.lastDemand - g.lastServed,
   });
-  if (ui.hist.length > 140) ui.hist.shift();
+  // ~5.8 days of history; derived from the day length so the window keeps showing the
+  // same span of days however long a day is (it used to be a bare 140, i.e. 7 days of
+  // 20 hours, which became 5.8 days the moment the clock went to 24)
+  if (ui.hist.length > TICKS_PER_DAY * 5 + 20) ui.hist.shift();
 }
 
 function step() {
@@ -644,6 +647,18 @@ function onGameOver() {
 
 // ---------------------------------------------------------------- game start --
 
+// The speed buttons are only meaningful for a run of the player's own. During the title
+// backdrop the world ticks on a fixed internal clock and setSpeed refuses input, so the
+// group is dimmed and disabled - a review flagged ▶ sitting there lit up while pressing it
+// did nothing as an ambiguous control state.
+function setSpeedControlsEnabled(on) {
+  // button:disabled already dims them (styles.css), so disabling is the whole change
+  for (const b of document.querySelectorAll('#speeds button')) {
+    b.disabled = !on;
+    if (!on) b.classList.remove('on');
+  }
+}
+
 function setSpeed(n) {
   if (ui.preview) return;     // the title-card backdrop runs on its own clock
   ui.speed = n;
@@ -653,6 +668,7 @@ function setSpeed(n) {
 function adoptGame(g, msg) {
   ui.game = g;
   ui.preview = false;
+  setSpeedControlsEnabled(true);
   ui.hist = [];
   ui.selected = null;
   ui.buildSel = null;
@@ -680,6 +696,11 @@ function startPreview() {
   ui.selected = null;
   ui.buildSel = null;
   ui.speed = 0;
+  // A screenshot review flagged the top bar as ambiguous: the ▶ button stayed
+  // highlighted while the demo world ran on its own fixed clock and pressing a speed did
+  // nothing (setSpeed returns early during preview). So the whole group is marked inert
+  // while there is no run of the player's to control.
+  setSpeedControlsEnabled(false);
   closeDetail();
   // decorative builds so the backdrop shows a region that has actually been
   // worked on, not just the two starter plants. Cash is topped up to 900 purely to
@@ -694,9 +715,9 @@ function startPreview() {
       for (let x = 0; x < MAP_COLS && !done; x++)
         if (canBuild(g, id, x, y).ok) { buildPlant(g, id, x, y); done = true; }
   }
-  // 70 hours of history means the chart and the log have real content the moment
-  // the page appears, rather than filling in while the player reads the card
-  for (let i = 0; i < 70 && !g.over; i++) { tick(g); pushHist(); }
+  // three days of history means the chart and the log have real content the moment the
+  // page appears, rather than filling in while the player reads the card
+  for (let i = 0; i < TICKS_PER_DAY * 3 && !g.over; i++) { tick(g); pushHist(); }
   ui.lastLogLen = g.log.length;
   renderPalette();
   renderLog();
@@ -705,7 +726,11 @@ function startPreview() {
 function newGame() {
   adoptGame(createGame());
   if (!seenCoach('map')) setTimeout(startCoach, 400);
-  toast('New run: Year 1, Frostbite. You start with a coal station and a gas peaker.', 'good');
+  // name the season the run really opens in: it is spring (YEAR_START_MONTH), and this
+  // line used to say "Frostbite", a winter month, which contradicted the calendar in the
+  // very same top bar.
+  const c0 = calendarOf(ui.game.tick);
+  toast(`New run: Year ${c0.year}, ${MONTH_NAMES[c0.month]} (${seasonName(c0.season)}). You start with a coal station and a gas peaker.`, 'good');
 }
 
 function continueGame() {
@@ -784,6 +809,10 @@ window.__gridling = {
   sell: (uid) => demolish(ui.game, uid),
   adoptImport: (text) => adoptGame(importFileFromText(text), 'Save imported.'),
   cal: { calendarOf, seasonName },
+  // the day and year lengths are the engine's business, not numbers the harness
+  // should have to remember (a day went from 20 to 24 ticks; every hardcoded 20 in
+  // the driver would otherwise have reported the wrong run length)
+  TICKS_PER_DAY, TICKS_PER_YEAR,
   state: () => ui.game,
 };
 
