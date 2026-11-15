@@ -15,7 +15,9 @@ import {
 import { WEATHER, weatherCandidates, HAZARDS, hazardCandidates } from './hazards.js';
 import { makeRng, randomSeed } from './rng.js';
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;   // 6: a day is 24 ticks, so a tick no longer means the
+                                 // same in-game hour - an old save must be refused with
+                                 // a clear message rather than resumed on a wrong clock
 export const TARIFF = 12;              // $ per MWh delivered
 export const START_MONEY = 70;         // k$
 export const OVERDRAFT = -12;          // k$: bankrupt below this

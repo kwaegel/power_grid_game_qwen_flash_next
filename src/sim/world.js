@@ -2,12 +2,18 @@
 import { PLANTS } from './plants.js';
 
 export const TICKS_PER_HOUR = 1;      // one sim tick = one in-game hour
-export const HOURS_PER_DAY = 20;
+// A real 24-hour day. It used to be 20, which meant the clock ran 19:00 -> 00:00 with no
+// evening decline in between: the demand curve then fell off a cliff at every day boundary
+// (in winter, 1.59 -> 0.58 in one tick: a 64% fall, against a worst legitimate hour-to-hour
+// move of 26-34%). That showed up as a sawtooth on the chart and made the last hour of each
+// day the hardest and the first hour free. 24 hours removes the seam and lets the clock show
+// real times. Pinned by the day-boundary check in tools/sanity.mjs.
+export const HOURS_PER_DAY = 24;
 export const DAYS_PER_MONTH = 5;
 export const MONTHS = 12;
 export const DAYS_PER_YEAR = DAYS_PER_MONTH * MONTHS;   // 60 days
-export const TICKS_PER_DAY = HOURS_PER_DAY * TICKS_PER_HOUR; // 20
-export const TICKS_PER_YEAR = TICKS_PER_DAY * DAYS_PER_YEAR; // 1200
+export const TICKS_PER_DAY = HOURS_PER_DAY * TICKS_PER_HOUR; // 24
+export const TICKS_PER_YEAR = TICKS_PER_DAY * DAYS_PER_YEAR; // 1440
 
 export const MONTH_NAMES = [
   'Frostbite', 'Thaw', 'Sprout', 'Bloom', 'Green', 'Longlight',
@@ -188,7 +194,12 @@ export function generateCities(rng, map) {
 
 export function demandCurve(month, hour) {
   const season = seasonOf(month);
-  // daily shape: morning bump ~h7, big evening peak ~h18, trough ~h3
+  // daily shape: morning bump ~h7, big evening peak ~h18, overnight trough. The evening
+  // gaussian has decayed to 0.06 by 22:00 and 0.02 by 23:00, so on a 24-hour clock the
+  // curve is already flat by midnight and continuous across it - no wrapping math needed.
+  // It was the 20-hour clock that made it jump (see the note on HOURS_PER_DAY). The
+  // minimum really does land at 00:00 in every season, which an earlier version of this
+  // comment got wrong by claiming the trough was at 03:00.
   const morning = 0.30 * Math.exp(-((hour - 7) ** 2) / 6);
   const evening = 0.62 * Math.exp(-((hour - 18) ** 2) / 7);
   const base = 0.52 + morning + evening;
