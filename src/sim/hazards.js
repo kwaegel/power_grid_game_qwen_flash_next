@@ -8,6 +8,10 @@
 //   warning  -> visible forecast + countdown, player can prepare (charge batteries,
 //               bring firm plants online, shut down vulnerable plants to halve damage)
 //   active   -> damage / modifiers applied over `duration` ticks
+// seasonOf lives in world.js; importing it here keeps one definition of the seasons.
+// There is no cycle: world.js knows nothing about weather or disasters.
+import { seasonOf } from './world.js';
+
 
 export const WEATHER = {
   clear:    { name: 'Clear',      icon: 'weather:clear', solar: 1.05, wind: 0.7,  demand: 1.00 },
@@ -100,7 +104,10 @@ export const HAZARDS = {
   },
   coldsnap: {
     id: 'coldsnap', name: 'Cold Snap', icon: 'hazard:coldsnap',
-    seasons: [0, 1, 11], warn: 18, duration: 20, severity: 1.1,
+    // season indices, not month indices (see hazardCandidates): a cold snap is a winter
+    // event. It used to read [0, 1, 11], which only worked by accident because 0, 1 and
+    // 11 are the three winter MONTHS and the filter was comparing months.
+    seasons: [0], warn: 18, duration: 20, severity: 1.1,
     demandMod: 1.45, windMod: 1.15, solarMod: 0.6,
     targets: [], repairCost: 0,
     text: 'Arctic air is moving in. Heating demand is about to spike hard.',
@@ -111,11 +118,19 @@ export const HAZARDS = {
 export const HAZARD_ORDER = Object.keys(HAZARDS);
 
 // Which hazards can fire, weighted, for the current calendar position.
+// `month` is a MONTH index (0-11), while each hazard's `seasons` field is a SEASON index
+// (0-3), so the filter has to convert. It used to compare them directly, which quietly
+// moved the seasonal hazards about: Heatwave (seasons [2]) was gated on month 2 = Sprout,
+// so it struck in *spring* and was excluded from every summer, and Ice Storm could hit
+// Bloom. That breaks the design's central promise - a disaster should telegraph what the
+// season is actually about, and "Heatwave in spring" teaches a player nothing.
+// The month-specific weight bumps below are genuinely month-based and stay as they are.
 export function hazardCandidates(month, year, rng) {
+  const season = seasonOf(month);
   const seasonW = [];
   for (const id of HAZARD_ORDER) {
     const h = HAZARDS[id];
-    if (h.seasons && !h.seasons.includes(month)) continue;
+    if (h.seasons && !h.seasons.includes(season)) continue;
     let w = h.severity;
     if (id === 'quake' || id === 'linefault' || id === 'plantfire') w = 0.8; // evergreen
     if (id === 'storm' && (month === 9 || month === 10 || month === 0)) w = 1.4;

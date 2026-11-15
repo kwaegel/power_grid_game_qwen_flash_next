@@ -11,11 +11,12 @@ import { readFileSync } from 'node:fs';
 import {
   createGame, tick, buildPlant, fleetSummary, demandMW, serialize, deserialize,
   availableCapacity, solarFactor, damageRoll, PLANTS, HAZARDS, linkCapacity,
-  START_MONEY, OVERDRAFT, UPGRADES,
+  START_MONEY, OVERDRAFT, UPGRADES, hourOf,
 } from '../src/sim/engine.js';
-import { TICKS_PER_DAY, TICKS_PER_YEAR, DAYS_PER_YEAR, calendarOf, seasonOf } from '../src/sim/world.js';
+import { TICKS_PER_DAY, TICKS_PER_YEAR, HOURS_PER_DAY, DAYS_PER_YEAR, calendarOf, seasonOf,
+  MONTH_NAMES, SEASON_NAMES } from '../src/sim/world.js';
 import { makeRng } from '../src/sim/rng.js';
-import { WEATHER } from '../src/sim/hazards.js';
+import { WEATHER, hazardCandidates } from '../src/sim/hazards.js';
 
 let passed = 0, failed = 0;
 function it(name, fn) {
@@ -142,6 +143,29 @@ it('demand peaks in the evening, not overnight', () => {
   assert.ok(bestHour >= 15 && bestHour <= 20, `peak lands at ${bestHour}:00`);
 });
 
+it('demand never falls off a cliff at the day boundary', () => {
+  // The day used to be 20 hours, so 19:00 ran straight into 00:00 and the curve dropped
+  // from 1.59 to 0.58 in a single tick - 64% in one hour, about 3x the biggest genuine
+  // transition, visible on the chart as a sawtooth at every day line and making the last
+  // hour of each day the hardest and the first hour free. A screenshot review flagged the
+  // sawtooth as a possible rendering bug; it was the simulation. This pins the fix.
+  const g = createGame(7);
+  for (const seasonDay of [0, 20, 40]) {          // different months, so different curves
+    let worst = 0, at = -1;
+    for (let h = 0; h < TICKS_PER_DAY; h++) {
+      const a = demandMW({ ...g, tick: seasonDay * TICKS_PER_DAY + h });
+      const b = demandMW({ ...g, tick: seasonDay * TICKS_PER_DAY + ((h + 1) % TICKS_PER_DAY) });
+      const d = Math.abs(b - a) / Math.min(a, b);
+      if (d > worst) { worst = d; at = h; }
+    }
+    assert.ok(worst < 0.45, `day ${seasonDay + 1}: ${at}:00 -> ${((at + 1) % TICKS_PER_DAY)}:00 moves ${(worst * 100).toFixed(0)}%`);
+  }
+  // and the clock is a real clock: a full day exists and midnight follows 23:00
+  assert.equal(HOURS_PER_DAY, 24, `a day is ${HOURS_PER_DAY} hours`);
+  assert.equal(hourOf(TICKS_PER_DAY), 0, 'the hour after the last hour of a day is not midnight');
+  assert.equal(hourOf(TICKS_PER_DAY - 1), 23, `the day ends at ${hourOf(TICKS_PER_DAY - 1)}:00`);
+});
+
 it('difficulty rises: the same clock hour costs more each year', () => {
   const g = createGame(31);
   const samples = [];
@@ -202,7 +226,7 @@ it('hazards really do arrive, damage things, and get repaired', () => {
   addPlant(g, 'coal');
   let warned = 0, struck = 0, damaged = 0, repaired = 0;
   let prevWarn = null, prevPhase = null;
-  for (let i = 0; i < 2400 && !g.over; i++) {
+  for (let i = 0; i < TICKS_PER_YEAR * 2 && !g.over; i++) {
     tick(g);
     const h = g.hazard;
     if (h && h.phase === 'warn' && prevWarn !== h.id) warned++;
@@ -218,6 +242,37 @@ it('hazards really do arrive, damage things, and get repaired', () => {
   assert.ok(damagedEvents > 0, 'hazards caused no damage');
   assert.ok(repairedEvents > 0, `nothing was repaired (${damaged} damaged ticks seen)`);
   void damaged; void repaired;
+});
+
+it('a hazard can only strike in a season its own data allows', () => {
+  // `h.seasons` is a SEASON index (0-3) but the calendar hands out a MONTH index (0-11).
+  // Comparing them directly once let Heatwave fire only in month 2 (Sprout) and never in
+  // a summer, and let Ice Storm reach Bloom - which destroys the design's promise that a
+  // disaster telegraphs what the season is about. This pins the convention.
+  const rng = makeRng(20261115);
+  for (let month = 0; month < 12; month++) {
+    const season = seasonOf(month);
+    const allowed = new Set();
+    for (let i = 0; i < 3000; i++) allowed.add(hazardCandidates(month, 1, rng));
+    for (const id of allowed) {
+      const s = HAZARDS[id].seasons;
+      assert.ok(!s || s.includes(season),
+        `${MONTH_NAMES[month]} (a ${SEASON_NAMES[season].toLowerCase()} month) offered ${id}, whose seasons are [${s}]`);
+    }
+    // every hazard with no season gate must always be reachable
+    for (const [id, def] of Object.entries(HAZARDS))
+      if (!def.seasons) assert.ok(allowed.has(id), `${id} never offered in ${MONTH_NAMES[month]}`);
+  }
+  // and the seasons that do exist are actually reachable in their own season
+  const summer = [5, 6, 7].flatMap((m) => { const s = new Set(); for (let i = 0; i < 1500; i++) s.add(hazardCandidates(m, 1, rng)); return [...s]; });
+  assert.ok(summer.includes('heatwave'), 'Heatwave can never strike in summer');
+  const winter = [11, 0, 1].flatMap((m) => { const s = new Set(); for (let i = 0; i < 1500; i++) s.add(hazardCandidates(m, 1, rng)); return [...s]; });
+  assert.ok(winter.includes('coldsnap'), 'Cold Snap can never strike in winter');
+  for (const m of [2, 3, 4]) {
+    const s = new Set();
+    for (let i = 0; i < 3000; i++) s.add(hazardCandidates(m, 1, rng));
+    assert.ok(!s.has('heatwave'), `Heatwave still reachable in ${MONTH_NAMES[m]}, a spring month`);
+  }
 });
 
 it('a run always ends: there is no invincible free-ride', () => {
