@@ -28,7 +28,9 @@ of years.
 
 **Your job:** for every hour of the game, the power you make has to cover the power
 the towns want. The chart under the map shows both — dashed orange is demand, the
-solid blue line is what you actually delivered. Red stubs between them are blackouts.
+solid blue line is what you actually delivered, and the soft green area behind them is
+the capacity you currently have available. Red stubs between blue and orange are
+blackouts; the grey dashed line, when it appears, is your tie-line limit.
 
 **Building:** pick a plant in the right-hand panel, then click a tile on the map. The
 ghost preview turns green when the site is legal. Click a plant you already own to
