@@ -41,16 +41,21 @@ start/stop it, change a battery's mode, or sell it.
 than $12k below zero. Your score grows with every MWh delivered while customers are
 happy, so a blackout costs you twice.
 
-**The rhythm of a year.** Demand peaks around 18:00 every day, with a smaller morning
-bump. Winter is much heavier (heating) and summer has an afternoon air-conditioning
-bump. A run starts in spring, so the first winter, about 45 days in, is your first
-real exam. Solar makes nothing at night; wind is strongest in autumn and winter and
+**The rhythm of a year.** A day is 24 real hours: the clock reads 00:00–23:00 and one tick
+= one hour. Demand peaks around 18:00 every day, with a smaller morning bump and a proper
+overnight trough you can refill batteries in. Winter is much heavier (heating) and summer
+has an afternoon air-conditioning bump. A run starts in spring, so the first winter, about
+45 days in, is your first real exam.
+Solar makes nothing at night; wind is strongest in autumn and winter and
 can go quiet for days during a calm spell; hydro swells in the spring melt and shrinks
 in a drought.
 
-**Disasters** appear first as a warning in the outlook strip and a banner across the
-top: a windstorm, ice storm, heatwave, drought, earthquake, line fault, plant fire or
-cold snap. You get real time to prepare:
+**Disasters** appear first as a warning in the outlook strip and a banner across the top:
+a windstorm, ice storm, heatwave, drought, earthquake, line fault, plant fire or cold
+snap. The weather-driven ones follow the season — ice storms and cold snaps in winter,
+heatwaves and droughts in summer — so a warning is a real forecast, not a random event.
+Earthquakes, line faults and plant fires can strike any time. You get real time to
+prepare:
 
 - Charge batteries while the warning is up (set them to *Charge*, or just let the
   surplus fill them).
@@ -119,7 +124,7 @@ src/icons.js           every icon in the game, drawn as canvas vectors
 src/render.js          canvas drawing: terrain, plants, weather, chart
 src/storage.js         autosave, best scores, export/import
 src/sim/               the simulation (no DOM): engine, plants, hazards, world, rng
-tools/sanity.mjs       23 simulation invariant checks
+tools/sanity.mjs       25 simulation invariant checks
 tools/balance.mjs      headless balance harness: node tools/balance.mjs 12
 tools/e2e/play.mjs     Chromium play-test driver (needs playwright-core, see tools/e2e)
 tools/e2e/glyphcheck.mjs  icon gate: coverage, silhouette confusion, terrain legibility
