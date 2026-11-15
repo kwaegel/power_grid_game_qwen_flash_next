@@ -501,9 +501,18 @@ export function drawChart(canvas, game, hist) {
   // to ~360 MW and crushed the demand line into the bottom tenth of the chart. The
   // surplus area is now drawn clipped flat at the top edge, and its exact figure is
   // printed in the legend row above the plot, where nothing is scaled.
+  // The headroom above the tallest bar is not decoration: it has to hold the 13 px
+  // evening peak marker that sits on top of it. At a flat 1.15x the axis left 8.3 px of
+  // plot above the axis-defining peak on the narrow layout's 114 px chart, so the marker
+  // for the single most important peak was cut off by the top of the plot. The factor is
+  // now derived from the plot height so the tallest peak always leaves MARKER_H+1 px,
+  // at any window size, and never falls below the old 1.15 look.
+  const MARKER_H = 13;
   let max = 10;
   for (const p of hist) max = Math.max(max, p.demand, p.served);
-  max *= 1.15;
+  // capped: past 1.3 the plot would be mostly empty space rather than demand, and on a
+  // very short chart the marker clamp below takes over instead.
+  max *= plotH > 40 ? Math.min(1.3, Math.max(1.15, plotH / (plotH - MARKER_H - 1))) : 1.15;
   let surplusOverTop = 0;
   for (const p of hist) if (p.potential > max) surplusOverTop++;
   const n = hist.length;
@@ -526,7 +535,8 @@ export function drawChart(canvas, game, hist) {
   // baseline
   ctx.strokeStyle = 'rgba(74,68,83,0.22)';
   ctx.beginPath(); ctx.moveTo(L, yBot); ctx.lineTo(L + plotW, yBot); ctx.stroke();
-  ctx.fillStyle = 'rgba(74,68,83,0.55)';
+  // the unit marker matches the axis numerals' weight; at 0.55 it read as smudged
+  ctx.fillStyle = 'rgba(74,68,83,0.7)';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillText('MW', 6, yTop + 4);
@@ -539,6 +549,9 @@ export function drawChart(canvas, game, hist) {
   ctx.textBaseline = 'alphabetic';
   const axisPills = [];
   let lastPeakX = -1e9;
+  // the highest marker apex actually drawn, so the play-test can assert markers stay
+  // inside the plot instead of guessing from pixels (Infinity = no marker in window)
+  let markerApex = Infinity;
   for (let i = 0; i < n; i++) {
     const hr = hist[i].hour;
     if (hr === 0) {
@@ -557,13 +570,21 @@ export function drawChart(canvas, game, hist) {
       // carries day numbers, so the two can never collide into unreadable text
       lastPeakX = X(i);
       const px = X(i), py = Y(hist[i].demand);
-      ctx.fillStyle = 'rgba(200,110,80,0.95)';
-      ctx.beginPath();
-      ctx.moveTo(px - 4, py - 6);
-      ctx.lineTo(px, py - 13);
-      ctx.lineTo(px + 4, py - 6);
-      ctx.closePath();
-      ctx.fill();
+      // 13 px tall, but the apex is never allowed above the plot top: on a short chart
+      // the marker has to shrink rather than punch into the legend band, and if there is
+      // no room left at all it is simply not drawn (a stubby triangle reads as a glitch).
+      const apex = Math.max(yTop + 1, py - 13);
+      const hgt = py - apex;
+      if (hgt >= 4) {
+        ctx.fillStyle = 'rgba(200,110,80,0.95)';
+        ctx.beginPath();
+        ctx.moveTo(px - 4, py - 6);
+        ctx.lineTo(px, apex);
+        ctx.lineTo(px + 4, py - 6);
+        ctx.closePath();
+        ctx.fill();
+        markerApex = Math.min(markerApex, apex);
+      }
     }
   }
 
@@ -679,9 +700,14 @@ export function drawChart(canvas, game, hist) {
     ctx.textAlign = 'left';
     ctx.fillText(`shortfall ${Math.round(last.demand - last.served)} MW`, L + 4, 16);
   }
-  // Returned so the play-test can assert the axis is scaled to the demand the player
-  // has to meet, not to whatever spare capacity happened to sit in the window.
-  return { axisTop: Math.round(max), surplusOverTop };
+  // Returned so the play-test can assert two things it could not otherwise verify from
+  // pixels: the axis is scaled to the demand the player has to meet (not to whatever
+  // spare capacity sat in the window), and no peak marker is drawn above the plot.
+  return {
+    axisTop: Math.round(max), surplusOverTop,
+    plotTop: yTop,
+    markerApex: Number.isFinite(markerApex) ? Math.round(markerApex * 10) / 10 : null,
+  };
 }
 
 // A readable axis step: 5, 10, 20, 25, 50, 100 ...

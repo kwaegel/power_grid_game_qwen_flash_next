@@ -116,6 +116,11 @@ const saveNowAndRead = () => G(() => {
   window.__gridling.saveNow();
   return { tick: g.tick, plants: g.plants.length, score: Math.round(g.score), money: +g.money.toFixed(2) };
 });
+// Tick-count thresholds below are spoken of in days and years, so they are derived from
+// the engine's own clock instead of hardcoded: a day went from 20 to 24 ticks, and every
+// literal 20 would have quietly reported the wrong run length. Assigned right after the
+// page boots (see below) - the handle does not exist until then.
+let SPD, YEAR;
 
 async function setSpeed(n) {
   await page.click(`#speeds button[data-speed="${n}"]`);
@@ -220,6 +225,10 @@ async function dismissCoach() {
 console.log('--- boot ---');
 await page.goto(`http://127.0.0.1:${PORT}/`);
 await sleep(500);
+// the page exists now, so the engine can tell us its own clock
+({ day: SPD, year: YEAR } = await G(() => ({
+  day: window.__gridling.TICKS_PER_DAY, year: window.__gridling.TICKS_PER_YEAR,
+})));
 check('stylesheet applied', await G(() => document.styleSheets.length >= 1 &&
   getComputedStyle(document.querySelector('main')).display === 'grid'));
 check('title screen appears', await page.isVisible('#modal-card h1'), await textOf('#modal-card h1'));
@@ -246,6 +255,17 @@ check('title screen appears', await page.isVisible('#modal-card h1'), await text
 }
 await shot('01-title');
 check('no page errors on load', pageErrors.length === 0, pageErrors.join(' | '));
+// The speed buttons control the player's own run. Behind the title card the world ticks
+// on its own fixed clock and setSpeed refuses input, so on the title screen they must not
+// look live: a review read the lit ▶ next to the pause button as an ambiguous state.
+{
+  const title = await G(() => ({
+    disabled: [...document.querySelectorAll('#speeds button')].every((b) => b.disabled),
+    anyOn: [...document.querySelectorAll('#speeds button.on')].length,
+  }));
+  check('speed controls are inert behind the title card', title.disabled && title.anyOn === 0,
+    JSON.stringify(title));
+}
 
 await page.click('[data-a="new"]');
 await sleep(900);   // coach marks appear a beat after the run starts
@@ -256,8 +276,16 @@ check('coach marks dismiss', !(await page.isVisible('#coach')));
 check('app shell visible after new run', await page.isVisible('#map'));
 const st0 = await stats();
 check('run starts powered: 2 plants, goodwill intact', st0.plants === 2 && st0.sat > 70 && st0.served > 0, JSON.stringify(st0));
+{
+  const live = await G(() => ({
+    disabled: [...document.querySelectorAll('#speeds button')].some((b) => b.disabled),
+    on: [...document.querySelectorAll('#speeds button.on')].map((b) => b.dataset.speed),
+  }));
+  check('speed controls become live once a run starts', !live.disabled && live.on.length === 1,
+    JSON.stringify(live));
+}
 
-// the real-time loop must advance by itself (one in-game day ≈ 10 s at 1x)
+// the real-time loop must advance by itself (2 ticks/s at 1x, so ≈12 s per 24-hour day)
 await setSpeed(1);
 const t0 = await G(() => window.__gridling.state().tick);
 await sleep(3000);
@@ -451,7 +479,9 @@ await G(() => window.__gridling.setTps(10));
 await page.click('#speeds button[data-speed="4"]');
 const start = Date.now();
 let built = 0, upgradesBought = 0, lastBuildTick = -999;
-while (Date.now() - start < 150_000) {
+// the loop exits as soon as the two-year gate is satisfied; the wall-clock figure is
+// only a safety stop, and it has to be long enough for two *24-hour* years
+while (Date.now() - start < 210_000) {
   const s = await stats();
   if (s.over) break;
   const rep = await report();
@@ -486,14 +516,14 @@ while (Date.now() - start < 150_000) {
   }
   const rep2 = await report();
   if (rep2.yearUps >= 2 && rep2.struck.length >= 2 && rep2.seasons.length >= 4) break;
-  if (s.tick > 3200) break;
+  if (s.tick > YEAR * 2 + 900) break;   // a bit past the two-year gate below
   await sleep(150);
 }
 const st2 = await stats();
 const rep = await report();
 await shot('08-mid-run');
-check('run gets well past the opening minutes (2 years+)', st2.tick > 2400 && !st2.over,
-  `tick=${st2.tick} (${Math.floor(st2.tick / 20)} days, ${rep.yearUps} new years)`);
+check('run gets well past the opening minutes (2 years+)', st2.tick > YEAR * 2 && !st2.over,
+  `tick=${st2.tick} (${Math.floor(st2.tick / SPD)} days, ${rep.yearUps} new years)`);
 check('all four seasons observed', rep.seasons.length >= 4, rep.seasons.join(','));
 check('clicking to build keeps working over a long run', built >= 8, `${built} mouse builds`);
 check('upgrading through the panel works', upgradesBought >= 2, `${upgradesBought} upgrades bought`);
@@ -538,6 +568,8 @@ check('no text overflows its container', over1.length === 0, over1.join(' | '));
       // window.__gridling has to be sampled here or it throws in the harness
       chartAxis: (window.__gridling.ui.chart || {}).axisTop ?? null,
       chartSurplus: (window.__gridling.ui.chart || {}).surplusOverTop ?? null,
+      chartPlotTop: (window.__gridling.ui.chart || {}).plotTop ?? null,
+      chartMarkerApex: (window.__gridling.ui.chart || {}).markerApex ?? null,
       peakDemand: window.__gridling.ui.hist.reduce((m, p) => Math.max(m, p.demand), 0),
       peakPotential: window.__gridling.ui.hist.reduce((m, p) => Math.max(m, p.potential), 0),
       histLen: window.__gridling.ui.hist.length,
@@ -605,6 +637,16 @@ check('no text overflows its container', over1.length === 0, over1.join(' | '));
       && (read.peakPotential <= read.chartAxis * 1.05 || read.chartSurplus > 0),
     JSON.stringify({ axisTop: read.chartAxis, peakDemand: Math.round(read.peakDemand),
       peakPotential: Math.round(read.peakPotential), surplusBarsOverTop: read.chartSurplus }));
+
+  // Peak markers are drawn 13 px above the demand point. With the axis fitted at 1.15x
+  // that left less than 13 px of plot above the tallest peak, so the marker for the single
+  // most important peak poked out of the top of the plot into the legend row - at the
+  // narrow layout's 114 px chart it was cropped outright. The axis now reserves the room
+  // and the marker clamps to the plot top, and drawChart reports both numbers so this is
+  // asserted rather than eyeballed off a screenshot.
+  check('evening peak markers stay inside the plot',
+    read.chartMarkerApex === null || read.chartMarkerApex >= read.chartPlotTop,
+    JSON.stringify({ plotTop: read.chartPlotTop, markerApex: read.chartMarkerApex }));
 }
 
 // narrower window
@@ -726,7 +768,7 @@ while (Date.now() < deadline) {
   if (s.over) { lost = s; break; }
   await sleep(300);
 }
-check('a careless player loses', !!lost, lost ? `${lost.over} after ${Math.floor(lost.tick / 20)} days` : 'still alive');
+check('a careless player loses', !!lost, lost ? `${lost.over} after ${Math.floor(lost.tick / SPD)} days` : 'still alive');
 check('game-over screen shows the score', await page.isVisible('.bigscore'), await textOf('.bigscore'));
 await shot('14-game-over');
 const shown = parseInt((await textOf('.bigscore')).replace(/[^0-9]/g, ''), 10);
@@ -739,12 +781,12 @@ check('best-score table persisted', scores.length >= 1, JSON.stringify(scores[0]
 if (scores.length && lost) {
   const replay = await G((seed) => {
     const g = window.__gridling.createGame(seed);
-    while (!g.over && g.tick < 20 * 4000) window.__gridling.tick(g);
-    return { days: Math.floor(g.tick / 20), reason: g.over && g.over.title };
+    while (!g.over && g.tick < window.__gridling.TICKS_PER_DAY * 4000) window.__gridling.tick(g);
+    return { days: Math.floor(g.tick / window.__gridling.TICKS_PER_DAY), reason: g.over && g.over.title };
   }, scores[0].seed);
   check('the careless run replays identically from its seed',
-    replay.days === Math.floor(lost.tick / 20) && replay.reason === lost.over,
-    `seed ${scores[0].seed}: browser ${Math.floor(lost.tick / 20)}d ${lost.over} vs replay ${replay.days}d ${replay.reason}`);
+    replay.days === Math.floor(lost.tick / SPD) && replay.reason === lost.over,
+    `seed ${scores[0].seed}: browser ${Math.floor(lost.tick / SPD)}d ${lost.over} vs replay ${replay.days}d ${replay.reason}`);
 }
 
 await page.reload();

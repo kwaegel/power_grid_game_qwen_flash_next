@@ -1,6 +1,8 @@
-// Throwaway: load the page from the *documented* server (`node server.mjs <port>`)
-// rather than the inline server the play-test driver starts, so the command in the
-// README is the thing actually exercised. Delete once run.
+// Loads the page from the *documented* server (`node server.mjs <port>`) rather than the
+// inline server the play-test driver starts, so the command in the README is the thing
+// actually exercised: run `node server.mjs` then `node tools/e2e/servecheck.mjs 8000`.
+// Also probes path traversal, because this is the one piece of code that touches the disk
+// outside the project.
 import { chromium } from 'playwright-core';
 
 const PORT = +(process.argv[2] || 8123);
@@ -28,7 +30,10 @@ const info = await page.evaluate(() => {
     boot: !!g,
     cashLabel: document.querySelector('#stat-money .k')?.textContent.trim(),
     cashValue: document.getElementById('v-money')?.textContent,
-    title: document.querySelector('#titlecard h1')?.textContent.trim(),
+    // #modal-card is the title card, the selector the play-test asserts too; this asked
+    // for #titlecard and printed `title: undefined`, which looked like a broken title on
+    // the documented server when nothing was wrong.
+    title: document.querySelector('#modal-card h1')?.textContent.trim(),
   };
 });
 console.log(info);
